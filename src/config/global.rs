@@ -1,0 +1,132 @@
+use std::collections::BTreeMap;
+use std::env;
+use std::fs;
+use std::path::PathBuf;
+
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum GlobalConfigError {
+    #[error("could not determine config directory — $HOME may not be set")]
+    NoConfigDir,
+
+    #[error("failed to read config file at {path}: {source}")]
+    Read {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+
+    #[error("failed to write config file at {path}: {source}")]
+    Write {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+
+    #[error("invalid config file at {path}: {source}")]
+    Parse {
+        path: PathBuf,
+        source: toml::de::Error,
+    },
+
+    #[error("failed to serialize config: {0}")]
+    Serialize(#[from] toml::ser::Error),
+
+    #[error("editor '{0}' already exists")]
+    EditorAlreadyExists(String),
+
+    #[error("editor '{0}' not found")]
+    EditorNotFound(String),
+
+    #[error("no editors configured — add one with `parai config editors add`")]
+    NoEditors,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EditorConfig {
+    pub name: String,
+    pub command: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct GlobalConfig {
+    #[serde(default)]
+    pub editors: BTreeMap<String, EditorConfig>,
+}
+
+impl GlobalConfig {
+    pub fn path() -> Result<PathBuf, GlobalConfigError> {
+        let config_dir = env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .or_else(|| dirs::home_dir().map(|h| h.join(".config")))
+            .ok_or(GlobalConfigError::NoConfigDir)?;
+
+        Ok(config_dir.join("parai").join("config.toml"))
+    }
+
+    pub fn load() -> Result<Self, GlobalConfigError> {
+        let path = Self::path()?;
+
+        if !path.exists() {
+            return Ok(Self::default());
+        }
+
+        let contents = fs::read_to_string(&path).map_err(|e| GlobalConfigError::Read {
+            path: path.clone(),
+            source: e,
+        })?;
+
+        toml::from_str(&contents).map_err(|e| GlobalConfigError::Parse { path, source: e })
+    }
+
+    pub fn save(&self) -> Result<(), GlobalConfigError> {
+        let path = Self::path()?;
+
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| GlobalConfigError::Write {
+                path: path.clone(),
+                source: e,
+            })?;
+        }
+
+        let contents = toml::to_string_pretty(self)?;
+        fs::write(&path, contents).map_err(|e| GlobalConfigError::Write { path, source: e })?;
+
+        Ok(())
+    }
+
+    pub fn add_editor(
+        &mut self,
+        id: String,
+        name: String,
+        command: String,
+    ) -> Result<(), GlobalConfigError> {
+        if self.editors.contains_key(&id) {
+            return Err(GlobalConfigError::EditorAlreadyExists(id));
+        }
+
+        self.editors.insert(id, EditorConfig { name, command });
+        Ok(())
+    }
+
+    pub fn remove_editor(&mut self, id: &str) -> Result<(), GlobalConfigError> {
+        if self.editors.remove(id).is_none() {
+            return Err(GlobalConfigError::EditorNotFound(id.to_string()));
+        }
+        Ok(())
+    }
+
+    pub fn get_editor(&self, id: &str) -> Result<&EditorConfig, GlobalConfigError> {
+        self.editors
+            .get(id)
+            .ok_or_else(|| GlobalConfigError::EditorNotFound(id.to_string()))
+    }
+
+    pub fn first_editor(&self) -> Result<(&String, &EditorConfig), GlobalConfigError> {
+        self.editors
+            .iter()
+            .next()
+            .ok_or(GlobalConfigError::NoEditors)
+    }
+}
