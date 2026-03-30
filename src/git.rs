@@ -208,6 +208,15 @@ pub fn ahead_behind(worktree_path: &Path) -> Result<AheadBehind, GitError> {
     })
 }
 
+pub fn branch_exists(name: &str) -> Result<bool, GitError> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--verify", &format!("refs/heads/{name}")])
+        .output()
+        .map_err(GitError::Io)?;
+
+    Ok(output.status.success())
+}
+
 pub fn add_worktree(
     worktree_path: &Path,
     from_branch: &str,
@@ -225,6 +234,32 @@ pub fn add_worktree(
             new_branch,
             &worktree_path.to_string_lossy(),
             from_branch,
+        ])
+        .output()
+        .map_err(GitError::Io)?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(GitError::CommandFailed(stderr));
+    }
+
+    Ok(())
+}
+
+pub fn add_worktree_existing_branch(
+    worktree_path: &Path,
+    branch: &str,
+) -> Result<(), GitError> {
+    if worktree_path.exists() {
+        return Err(GitError::WorktreeAlreadyExists(worktree_path.to_path_buf()));
+    }
+
+    let output = Command::new("git")
+        .args([
+            "worktree",
+            "add",
+            &worktree_path.to_string_lossy(),
+            branch,
         ])
         .output()
         .map_err(GitError::Io)?;

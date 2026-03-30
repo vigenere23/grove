@@ -39,7 +39,11 @@ pub fn run() -> Result<()> {
         }
     }
 
-    for wt in &non_main {
+    for (i, wt) in non_main.iter().enumerate() {
+        if i > 0 {
+            println!();
+        }
+
         let is_current = is_in_worktree
             && current_root.as_ref().is_some_and(|root| wt.path == *root);
 

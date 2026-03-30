@@ -3,6 +3,7 @@ mod config;
 mod editor;
 mod git;
 mod output;
+mod prompt;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
