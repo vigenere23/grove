@@ -27,7 +27,10 @@ parai config editors add code --name "VSCode" --command "code \$workspace"
 echo 'editor = "code"' > .parai.toml
 
 # 3. Spin up a worktree and open the editor
-parai start my-feature --from main
+parai new my-feature --from main
+
+# 4. When you're done, remove the worktree
+parai rm my-feature
 ```
 
 This creates a worktree at `<git-root>/../.<repo>_worktrees/my-feature` on a new branch `wip/my-feature`, then opens VSCode pointing at the correct subdirectory.
@@ -75,9 +78,13 @@ src/
   main.rs              Entry point and CLI definition (clap)
   commands/
     config.rs          Editor config management (list, add, remove)
-    start.rs           Worktree creation and editor launch
+    new.rs             Worktree creation and editor launch
+    open.rs            Reopen an existing worktree in the editor
+    rm.rs              Worktree removal and branch cleanup
+    ls.rs              List worktrees and their status
   config/
     global.rs          Global config (load, save, editor CRUD)
+    state.rs           Per-repo worktree state tracking
     workspace.rs       Workspace config (hierarchical .parai.toml lookup)
   git.rs               Git operations (repo root, branch, worktree)
   editor.rs            Editor command expansion and process spawn

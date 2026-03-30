@@ -156,6 +156,58 @@ pub fn is_dirty(worktree_path: &Path) -> Result<bool, GitError> {
     Ok(!output.stdout.is_empty())
 }
 
+#[derive(Debug, Default)]
+pub struct AheadBehind {
+    pub ahead: u32,
+    pub behind: u32,
+    /// true when the branch has no upstream configured (never pushed)
+    pub no_upstream: bool,
+}
+
+pub fn ahead_behind(worktree_path: &Path) -> Result<AheadBehind, GitError> {
+    let check = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "@{upstream}"])
+        .current_dir(worktree_path)
+        .output()
+        .map_err(GitError::Io)?;
+
+    if !check.status.success() {
+        return Ok(AheadBehind {
+            ahead: 0,
+            behind: 0,
+            no_upstream: true,
+        });
+    }
+
+    let output = Command::new("git")
+        .args(["rev-list", "--left-right", "--count", "@{upstream}...HEAD"])
+        .current_dir(worktree_path)
+        .output()
+        .map_err(GitError::Io)?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(GitError::CommandFailed(stderr));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parts: Vec<&str> = stdout.trim().split('\t').collect();
+    if parts.len() != 2 {
+        return Err(GitError::CommandFailed(format!(
+            "unexpected rev-list output: {stdout}"
+        )));
+    }
+
+    let behind = parts[0].parse::<u32>().unwrap_or(0);
+    let ahead = parts[1].parse::<u32>().unwrap_or(0);
+
+    Ok(AheadBehind {
+        ahead,
+        behind,
+        no_upstream: false,
+    })
+}
+
 pub fn add_worktree(
     worktree_path: &Path,
     from_branch: &str,
@@ -183,4 +235,120 @@ pub fn add_worktree(
     }
 
     Ok(())
+}
+
+pub fn remove_worktree(worktree_path: &Path, force: bool) -> Result<(), GitError> {
+    let mut args = vec!["worktree", "remove"];
+    if force {
+        args.push("--force");
+    }
+    let path_str = worktree_path.to_string_lossy();
+    args.push(&path_str);
+
+    let output = Command::new("git")
+        .args(&args)
+        .output()
+        .map_err(GitError::Io)?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(GitError::CommandFailed(stderr));
+    }
+
+    Ok(())
+}
+
+pub fn delete_branch(branch: &str) -> Result<(), GitError> {
+    let output = Command::new("git")
+        .args(["branch", "-D", branch])
+        .output()
+        .map_err(GitError::Io)?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(GitError::CommandFailed(stderr));
+    }
+
+    Ok(())
+}
+
+pub fn delete_remote_branch(branch: &str) -> Result<(), GitError> {
+    let output = Command::new("git")
+        .args(["push", "origin", "--delete", branch])
+        .output()
+        .map_err(GitError::Io)?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(GitError::CommandFailed(stderr));
+    }
+
+    Ok(())
+}
+
+/// Derive an id from a worktree path by taking the last path component.
+pub fn worktree_id(worktree_path: &Path) -> Option<String> {
+    worktree_path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+}
+
+/// Find a worktree by id. Checks the parai worktree dir first, then scans
+/// all git worktrees for a directory whose name matches the id.
+pub fn find_worktree(git_root: &Path, id: &str) -> Result<Option<WorktreeInfo>, GitError> {
+    let parai_path = worktree_dir(git_root, id);
+    let worktrees = list_worktrees()?;
+
+    for wt in worktrees {
+        if wt.path == parai_path {
+            return Ok(Some(wt));
+        }
+        if wt.path != git_root && worktree_id(&wt.path).as_deref() == Some(id) {
+            return Ok(Some(wt));
+        }
+    }
+
+    Ok(None)
+}
+
+pub fn worktree_branch(worktree_path: &Path) -> Result<Option<String>, GitError> {
+    let output = Command::new("git")
+        .args(["worktree", "list", "--porcelain"])
+        .output()
+        .map_err(GitError::Io)?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(GitError::CommandFailed(stderr));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut current_path: Option<PathBuf> = None;
+    let mut current_branch: Option<String> = None;
+
+    for line in stdout.lines() {
+        if let Some(path_str) = line.strip_prefix("worktree ") {
+            current_path = Some(PathBuf::from(path_str));
+        } else if let Some(branch_ref) = line.strip_prefix("branch ") {
+            current_branch = branch_ref.strip_prefix("refs/heads/").map(|s| s.to_string());
+        } else if line == "detached" {
+            current_branch = None;
+        } else if line.is_empty() {
+            if let Some(ref path) = current_path {
+                if path == worktree_path {
+                    return Ok(current_branch);
+                }
+            }
+            current_path = None;
+            current_branch = None;
+        }
+    }
+
+    if let Some(ref path) = current_path {
+        if path == worktree_path {
+            return Ok(current_branch);
+        }
+    }
+
+    Ok(None)
 }

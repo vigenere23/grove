@@ -48,6 +48,39 @@ pub fn run() -> Result<()> {
     Ok(())
 }
 
+fn format_status(wt: &WorktreeInfo) -> String {
+    if wt.is_bare {
+        return String::new();
+    }
+
+    let mut parts = Vec::new();
+
+    match git::is_dirty(&wt.path) {
+        Ok(true) => parts.push("uncommitted".to_string()),
+        Ok(false) => {}
+        Err(_) => parts.push("unknown".to_string()),
+    }
+
+    match git::ahead_behind(&wt.path) {
+        Ok(ab) if ab.no_upstream => parts.push("not pushed".to_string()),
+        Ok(ab) => {
+            if ab.ahead > 0 {
+                parts.push(format!("↑{}", ab.ahead));
+            }
+            if ab.behind > 0 {
+                parts.push(format!("↓{}", ab.behind));
+            }
+        }
+        Err(_) => {}
+    }
+
+    if parts.is_empty() {
+        " [clean]".to_string()
+    } else {
+        format!(" [{}]", parts.join(", "))
+    }
+}
+
 fn print_worktree(wt: &WorktreeInfo, is_current: bool, state: &RepoState, git_root: &Path) {
     let branch_display = match &wt.branch {
         Some(b) => b.as_str(),
@@ -55,35 +88,32 @@ fn print_worktree(wt: &WorktreeInfo, is_current: bool, state: &RepoState, git_ro
         None => "(detached)",
     };
 
-    let dirty_marker = if wt.is_bare {
-        String::new()
-    } else {
-        match git::is_dirty(&wt.path) {
-            Ok(true) => " [dirty]".to_string(),
-            Ok(false) => " [clean]".to_string(),
-            Err(_) => " [unknown]".to_string(),
-        }
-    };
-
+    let status = format_status(wt);
     let current_marker = if is_current { "* " } else { "  " };
 
-    let lookup = state
+    let state_lookup = state
         .worktrees
         .iter()
         .find(|(id, _)| git::worktree_dir(git_root, id) == wt.path);
 
-    let (id_display, workspace_display) = match lookup {
-        Some((id, ws)) => (
-            id.as_str().to_string(),
-            format!("    workspace: {}", ws.workspace.display()),
-        ),
-        None => ("?".to_string(), String::new()),
+    let id_display = match state_lookup {
+        Some((id, _)) => id.clone(),
+        None => git::worktree_id(&wt.path).unwrap_or_else(|| "?".to_string()),
     };
 
-    println!("{current_marker}{id_display}{dirty_marker}");
+    let workspace_display = state_lookup
+        .map(|(_, ws)| format!("    workspace: {}", ws.workspace.display()));
+
+    let tracked_marker = if state_lookup.is_none() {
+        " (untracked)"
+    } else {
+        ""
+    };
+
+    println!("{current_marker}{id_display}{status}{tracked_marker}");
     println!("    path:   {}", wt.path.display());
     println!("    branch: {branch_display}");
-    if !workspace_display.is_empty() {
-        println!("{workspace_display}");
+    if let Some(ws) = workspace_display {
+        println!("{ws}");
     }
 }

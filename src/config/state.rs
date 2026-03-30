@@ -93,4 +93,8 @@ impl RepoState {
             .get(id)
             .ok_or_else(|| StateError::NotFound(id.to_string()))
     }
+
+    pub fn remove(&mut self, id: &str) {
+        self.worktrees.remove(id);
+    }
 }

@@ -3,7 +3,7 @@ mod config;
 mod editor;
 mod git;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
 #[command(name = "parai", about = "Run parallel agents on the same workspace, without conflicts")]
@@ -20,14 +20,10 @@ enum Commands {
         command: ConfigCommands,
     },
     /// List all worktrees and their status
-    List,
-    /// Reopen an existing worktree in the editor
-    Resume {
-        /// Worktree identifier
-        id: String,
-    },
+    #[command(alias = "list")]
+    Ls,
     /// Create a worktree and open an editor
-    Start {
+    New {
         /// Worktree identifier
         id: String,
         /// Base branch to create the worktree from (default: current branch)
@@ -36,6 +32,26 @@ enum Commands {
         /// New branch name to create (default: wip/<id>)
         #[arg(long)]
         branch: Option<String>,
+    },
+    /// Reopen an existing worktree in the editor
+    Open {
+        /// Worktree identifier
+        id: String,
+    },
+    /// Remove a worktree
+    #[command(alias = "remove")]
+    Rm {
+        /// Worktree identifier (omit when using --all)
+        id: Option<String>,
+        /// Remove even if the worktree has uncommitted changes
+        #[arg(long)]
+        force: bool,
+        /// Remove all worktrees
+        #[arg(long)]
+        all: bool,
+        /// What to do with the branch after removal
+        #[arg(long, value_enum)]
+        branch: Option<BranchCleanup>,
     },
 }
 
@@ -46,6 +62,14 @@ enum ConfigCommands {
         #[command(subcommand)]
         command: EditorCommands,
     },
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+pub enum BranchCleanup {
+    /// Delete the local branch
+    Delete,
+    /// Delete the local and remote branch
+    DeleteRemote,
 }
 
 #[derive(Subcommand)]
@@ -83,8 +107,14 @@ fn main() -> anyhow::Result<()> {
                 EditorCommands::Remove { id } => commands::config::remove_editor(id),
             },
         },
-        Commands::List => commands::list::run(),
-        Commands::Resume { id } => commands::resume::run(id),
-        Commands::Start { id, from, branch } => commands::start::run(id, from, branch),
+        Commands::Ls => commands::ls::run(),
+        Commands::New { id, from, branch } => commands::new::run(id, from, branch),
+        Commands::Open { id } => commands::open::run(id),
+        Commands::Rm {
+            id,
+            force,
+            all,
+            branch,
+        } => commands::rm::run(id, force, all, branch),
     }
 }

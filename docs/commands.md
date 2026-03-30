@@ -67,10 +67,10 @@ Remove an editor from the global config.
 
 ---
 
-## `parai start`
+## `parai new`
 
 ```
-parai start <ID> [--from <BRANCH>] [--branch <BRANCH>]
+parai new <ID> [--from <BRANCH>] [--branch <BRANCH>]
 ```
 
 Create a git worktree and open the configured editor.
@@ -105,7 +105,7 @@ Given this layout:
 Running from `/home/project/moduleA`:
 
 ```bash
-parai start featureX --from main --branch feat/test-123/new-command
+parai new featureX --from main --branch feat/test-123/new-command
 ```
 
 Result:
@@ -125,3 +125,122 @@ Result:
 | No `.parai.toml` found and no editors in global config | `no editors configured — add one with parai config editors add`     |
 | Editor command is empty                            | `editor command is empty`                                               |
 | Editor binary cannot be executed                   | `failed to launch editor '<command>': <OS error>`                       |
+
+---
+
+## `parai open`
+
+```
+parai open <ID>
+```
+
+Reopen an existing worktree in the configured editor.
+
+| Argument | Description            |
+| -------- | ---------------------- |
+| `<ID>`   | Worktree identifier    |
+
+### What it does
+
+1. Looks up the worktree in the state file.
+2. Verifies the worktree directory still exists.
+3. Opens the editor at the stored workspace path.
+
+### Errors
+
+| Condition                          | Message                                                                        |
+| ---------------------------------- | ------------------------------------------------------------------------------ |
+| Worktree not found in state        | `worktree '<ID>' not found in state`                                           |
+| Worktree directory doesn't exist   | `worktree directory does not exist: <path>` (may have been removed or pruned)  |
+| Editor not found in global config  | `editor '<ID>' not found`                                                      |
+| Editor fails to launch             | `failed to launch editor '<command>': <OS error>`                              |
+
+---
+
+## `parai ls`
+
+**Alias:** `parai list`
+
+List all worktrees and their status.
+
+### Output
+
+For each worktree, displays:
+
+- **Identifier** (or `?` if not tracked in state)
+- **Dirty/clean status** (`[dirty]` or `[clean]`)
+- **Path** on disk
+- **Branch** name (or `(detached)` / `(bare)`)
+- **Workspace** subdirectory (if tracked)
+
+The current worktree (if you're inside one) is marked with `*` and listed first.
+
+---
+
+## `parai rm`
+
+**Alias:** `parai remove`
+
+```
+parai rm <ID> [--force] [--branch <MODE>]
+parai rm --all [--force] [--branch <MODE>]
+```
+
+Remove a worktree and clean up state.
+
+| Argument        | Description                                              | Default    |
+| --------------- | -------------------------------------------------------- | ---------- |
+| `<ID>`          | Worktree identifier (omit when using `--all`)            | *required* |
+| `--force`       | Remove even if the worktree has uncommitted changes      | `false`    |
+| `--all`         | Remove all tracked worktrees                             | `false`    |
+| `--branch`      | Branch cleanup mode                                      | *(none)*   |
+
+### Branch cleanup modes
+
+| Value             | Description                              |
+| ----------------- | ---------------------------------------- |
+| `delete`          | Delete the local branch after removal    |
+| `delete-remote`   | Delete both local and remote branches    |
+
+### What it does
+
+1. **Checks for uncommitted changes** — refuses to remove a dirty worktree unless `--force` is passed.
+2. **Resolves the branch** associated with the worktree (for optional cleanup).
+3. **Removes the git worktree** (`git worktree remove`).
+4. **Optionally deletes the branch** (local and/or remote) based on `--branch`.
+5. **Removes the entry** from the state file.
+
+If the worktree directory is already gone (e.g. manually deleted), the state entry is cleaned up silently.
+
+With `--all`, all tracked worktrees are removed. Errors on individual worktrees are collected and reported at the end; successful removals still take effect.
+
+### Examples
+
+```bash
+# Remove a clean worktree
+parai rm my-feature
+
+# Force-remove a dirty worktree
+parai rm my-feature --force
+
+# Remove and delete the local branch
+parai rm my-feature --branch delete
+
+# Remove and delete both local and remote branches
+parai rm my-feature --branch delete-remote
+
+# Remove all worktrees
+parai rm --all
+
+# Force-remove all worktrees and delete all branches
+parai rm --all --force --branch delete
+```
+
+### Errors
+
+| Condition                                    | Message                                                                        |
+| -------------------------------------------- | ------------------------------------------------------------------------------ |
+| Neither `<ID>` nor `--all` provided          | `worktree id is required (or use --all)`                                       |
+| Both `<ID>` and `--all` provided             | `cannot specify both an id and --all`                                          |
+| Worktree has uncommitted changes (no --force)| `worktree '<ID>' has uncommitted changes — commit/stash them first, or use --force` |
+| Git worktree remove fails                    | `git command failed: <git stderr>`                                             |
