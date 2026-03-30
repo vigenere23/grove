@@ -4,6 +4,7 @@ use anyhow::{bail, Context, Result};
 
 use crate::config::state::RepoState;
 use crate::git;
+use crate::output::*;
 use crate::BranchCleanup;
 
 pub fn run(
@@ -41,7 +42,7 @@ fn run_all(force: bool, branch_cleanup: Option<BranchCleanup>) -> Result<()> {
         .collect();
 
     if ids.is_empty() {
-        println!("No worktrees to remove.");
+        println!("{}", DIM.paint("No worktrees to remove."));
         return Ok(());
     }
 
@@ -107,7 +108,7 @@ fn remove_one(
         Err(_) => {
             if state.get(id).is_ok() {
                 state.remove(id);
-                println!("{id}: worktree directory already gone, cleaned up state");
+                println!("{} {}", BOLD.paint(id), YELLOW.paint("worktree directory already gone, cleaned up state"));
                 return Ok(());
             }
             bail!("no worktree found with id '{id}'");
@@ -135,33 +136,35 @@ fn remove_one(
             match cleanup {
                 BranchCleanup::DeleteRemote => {
                     if let Err(e) = git::delete_remote_branch(branch_name) {
-                        eprintln!("{id}: warning: failed to delete remote branch: {e}");
+                        eprintln!("{} {} failed to delete remote branch: {e}", BOLD.paint(id), BOLD_YELLOW.paint("⚠"));
                     } else {
-                        println!("{id}: deleted remote branch '{branch_name}'");
+                        println!("{} deleted remote branch {}", BOLD.paint(id), CYAN.paint(branch_name));
                     }
                     if let Err(e) = git::delete_branch(branch_name) {
-                        eprintln!("{id}: warning: failed to delete local branch: {e}");
+                        eprintln!("{} {} failed to delete local branch: {e}", BOLD.paint(id), BOLD_YELLOW.paint("⚠"));
                     } else {
-                        println!("{id}: deleted local branch '{branch_name}'");
+                        println!("{} deleted local branch {}", BOLD.paint(id), CYAN.paint(branch_name));
                     }
                 }
                 BranchCleanup::Delete => {
                     if let Err(e) = git::delete_branch(branch_name) {
-                        eprintln!("{id}: warning: failed to delete local branch: {e}");
+                        eprintln!("{} {} failed to delete local branch: {e}", BOLD.paint(id), BOLD_YELLOW.paint("⚠"));
                     } else {
-                        println!("{id}: deleted local branch '{branch_name}'");
+                        println!("{} deleted local branch {}", BOLD.paint(id), CYAN.paint(branch_name));
                     }
                 }
             }
         }
     } else if has_unpushed {
         eprintln!(
-            "{id}: warning: branch has unpushed commits (the branch is preserved locally)"
+            "{} {} branch has unpushed commits (the branch is preserved locally)",
+            BOLD.paint(id),
+            BOLD_YELLOW.paint("⚠")
         );
     }
 
     state.remove(id);
-    println!("{id}: removed");
+    println!("{} {}", BOLD.paint(id), GREEN.paint("✔ removed"));
 
     Ok(())
 }

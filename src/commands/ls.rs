@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 use crate::config::state::RepoState;
 use crate::git;
 use crate::git::WorktreeInfo;
+use crate::output::*;
 
 pub fn run() -> Result<()> {
     let git_root = git::repo_root().context("failed to find git repository root")?;
@@ -22,7 +23,7 @@ pub fn run() -> Result<()> {
         .collect();
 
     if non_main.is_empty() {
-        println!("No worktrees found.");
+        println!("{}", DIM.paint("No worktrees found."));
         return Ok(());
     }
 
@@ -56,26 +57,26 @@ fn format_status(wt: &WorktreeInfo) -> String {
     let mut parts = Vec::new();
 
     match git::is_dirty(&wt.path) {
-        Ok(true) => parts.push("uncommitted".to_string()),
+        Ok(true) => parts.push(YELLOW.paint("uncommitted")),
         Ok(false) => {}
-        Err(_) => parts.push("unknown".to_string()),
+        Err(_) => parts.push(RED.paint("unknown")),
     }
 
     match git::ahead_behind(&wt.path) {
-        Ok(ab) if ab.no_upstream => parts.push("not pushed".to_string()),
+        Ok(ab) if ab.no_upstream => parts.push(YELLOW.paint("not pushed")),
         Ok(ab) => {
             if ab.ahead > 0 {
-                parts.push(format!("↑{}", ab.ahead));
+                parts.push(CYAN.paint(format!("↑{}", ab.ahead)));
             }
             if ab.behind > 0 {
-                parts.push(format!("↓{}", ab.behind));
+                parts.push(CYAN.paint(format!("↓{}", ab.behind)));
             }
         }
         Err(_) => {}
     }
 
     if parts.is_empty() {
-        " [clean]".to_string()
+        format!(" {}", GREEN.paint("✔ clean"))
     } else {
         format!(" [{}]", parts.join(", "))
     }
@@ -89,7 +90,7 @@ fn print_worktree(wt: &WorktreeInfo, is_current: bool, state: &RepoState, git_ro
     };
 
     let status = format_status(wt);
-    let current_marker = if is_current { "* " } else { "  " };
+    let current_marker = if is_current { "▸ " } else { "  " };
 
     let state_lookup = state
         .worktrees
@@ -105,14 +106,20 @@ fn print_worktree(wt: &WorktreeInfo, is_current: bool, state: &RepoState, git_ro
         .map(|(_, ws)| format!("    workspace: {}", ws.workspace.display()));
 
     let tracked_marker = if state_lookup.is_none() {
-        " (untracked)"
+        format!(" {}", DIM.paint("(untracked)"))
     } else {
-        ""
+        String::new()
     };
 
-    println!("{current_marker}{id_display}{status}{tracked_marker}");
-    println!("    path:   {}", wt.path.display());
-    println!("    branch: {branch_display}");
+    let id_styled = if is_current {
+        BOLD_CYAN.paint(&id_display)
+    } else {
+        BOLD.paint(&id_display)
+    };
+
+    println!("{current_marker}{id_styled}{status}{tracked_marker}");
+    println!("    {}   {}", DIM.paint("path:"), wt.path.display());
+    println!("    {} {}", DIM.paint("branch:"), CYAN.paint(branch_display));
     if let Some(ws) = workspace_display {
         println!("{ws}");
     }

@@ -8,6 +8,7 @@ use crate::config::state::{RepoState, WorktreeState};
 use crate::config::workspace;
 use crate::editor;
 use crate::git;
+use crate::output::*;
 
 pub fn run(id: String) -> Result<()> {
     let git_root = git::repo_root().context("failed to find git repository root")?;
@@ -50,7 +51,7 @@ pub fn run(id: String) -> Result<()> {
 
     editor::open(editor_cfg, &editor_workspace).context("failed to open editor")?;
 
-    println!("Editor opened at {}", editor_workspace.display());
+    println!("{} Editor opened for {} at {}", GREEN.paint("✔"), BOLD_CYAN.paint(&id), editor_workspace.display());
 
     Ok(())
 }
