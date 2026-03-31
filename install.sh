@@ -38,3 +38,15 @@ case ":$PATH:" in
         echo "Then restart your shell or run: source ~/.zshrc"
         ;;
 esac
+
+echo ""
+echo "To enable tab completions, add one of the following to your shell profile:"
+echo ""
+echo "  # zsh (~/.zshrc)"
+echo "  source <(COMPLETE=zsh grove)"
+echo ""
+echo "  # bash (~/.bashrc)"
+echo "  source <(COMPLETE=bash grove)"
+echo ""
+echo "  # fish (~/.config/fish/config.fish)"
+echo "  COMPLETE=fish grove | source"

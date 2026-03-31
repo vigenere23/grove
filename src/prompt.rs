@@ -186,6 +186,9 @@ pub fn select(title: &str, items: &[SelectItem]) -> Result<String> {
                             stdout.flush()?;
                             return Ok(items[idx].id.clone());
                         }
+                        if c == 'q' {
+                            bail!("aborted");
+                        }
                     }
                     _ => {}
                 }

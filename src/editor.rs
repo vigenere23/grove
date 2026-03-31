@@ -22,13 +22,18 @@ pub enum EditorError {
 
 /// Replace `$workspace` in the editor command template and spawn the process.
 pub fn open(editor: &EditorConfig, workspace_path: &Path) -> Result<(), EditorError> {
+    use crate::output::verbose;
+
     let workspace_str = workspace_path.to_string_lossy();
     let expanded = editor.command.replace("$workspace", &workspace_str);
+    verbose!("editor command expanded: {}", expanded);
 
     let parts = shell_words::split(&expanded).map_err(|e| EditorError::Parse(e.to_string()))?;
     let (program, args) = parts
         .split_first()
         .ok_or(EditorError::EmptyCommand)?;
+
+    verbose!("spawning: {} {:?}", program, args);
 
     Command::new(program)
         .args(args)

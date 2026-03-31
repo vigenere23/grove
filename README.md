@@ -90,6 +90,25 @@ src/
   editor.rs            Editor command expansion and process spawn
 ```
 
+## Shell completions
+
+`grove` supports tab completions for all commands, flags, and arguments — including dynamic completion of worktree IDs for `grove open` and `grove rm`.
+
+Add the appropriate line to your shell profile:
+
+```bash
+# zsh (~/.zshrc)
+source <(COMPLETE=zsh grove)
+
+# bash (~/.bashrc)
+source <(COMPLETE=bash grove)
+
+# fish (~/.config/fish/config.fish)
+COMPLETE=fish grove | source
+```
+
+Then restart your shell (or `source` the profile) to enable completions.
+
 ## Building from source
 
 ### Prerequisites

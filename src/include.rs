@@ -27,6 +27,9 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
 /// but do not abort the operation. Returns the list of paths that were
 /// successfully copied.
 pub fn copy_includes(source: &Path, dest: &Path, includes: &[String]) -> Vec<String> {
+    verbose!("copy_includes: source={}, dest={}", source.display(), dest.display());
+    verbose!("copy_includes: paths={:?}", includes);
+
     let mut copied = Vec::new();
 
     for rel in includes {
@@ -34,8 +37,11 @@ pub fn copy_includes(source: &Path, dest: &Path, includes: &[String]) -> Vec<Str
         let dst = dest.join(rel);
 
         if !src.exists() {
+            verbose!("copy_includes: skipping '{}' — source does not exist ({})", rel, src.display());
             continue;
         }
+
+        verbose!("copy_includes: copying '{}' ({} -> {})", rel, src.display(), dst.display());
 
         let result = if src.is_dir() {
             copy_dir_recursive(&src, &dst)
@@ -51,7 +57,10 @@ pub fn copy_includes(source: &Path, dest: &Path, includes: &[String]) -> Vec<Str
         };
 
         match result {
-            Ok(()) => copied.push(rel.clone()),
+            Ok(()) => {
+                verbose!("copy_includes: '{}' copied successfully", rel);
+                copied.push(rel.clone());
+            }
             Err(e) => {
                 eprintln!(
                     "{} failed to copy {}: {}",

@@ -1,3 +1,4 @@
+use std::env;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -5,6 +6,7 @@ use anyhow::{bail, Context, Result};
 use crate::config::state::RepoState;
 use crate::git;
 use crate::output::*;
+use crate::output::verbose;
 use crate::BranchCleanup;
 
 pub fn run(
@@ -53,6 +55,10 @@ fn run_current(force: bool, branch_cleanup: Option<BranchCleanup>) -> Result<()>
 
     let id = git::worktree_id(&current_root)
         .context("failed to derive worktree id from current directory")?;
+
+    // Move CWD out of the worktree so the directory can actually be deleted.
+    // On Unix the kernel keeps a directory alive while any process has it as CWD.
+    env::set_current_dir(&git_root).context("failed to change directory to repo root")?;
 
     let worktrees = git::list_worktrees().context("failed to list worktrees")?;
     let worktree_paths: Vec<_> = worktrees.iter().map(|wt| wt.path.clone()).collect();
@@ -115,15 +121,13 @@ fn check_unpushed(
         Err(_) => return Ok(false),
     };
 
-    let has_unpushed = ab.no_upstream || ab.ahead > 0;
-
-    if has_unpushed && !force && branch_cleanup.is_some() {
+    if !force && branch_cleanup.is_some() && (ab.no_upstream || ab.ahead > 0) {
         bail!(
             "worktree '{id}' has unpushed commits — push first, or use --force to delete the branch anyway"
         );
     }
 
-    Ok(has_unpushed)
+    Ok(ab.ahead > 0)
 }
 
 fn resolve_worktree_path(id: &str, git_root: &Path) -> Result<PathBuf> {
@@ -140,6 +144,7 @@ fn remove_one(
     force: bool,
     branch_cleanup: &Option<BranchCleanup>,
 ) -> Result<()> {
+    verbose!("removing worktree '{}' (force={})", id, force);
     let worktree_path = match resolve_worktree_path(id, git_root) {
         Ok(path) => path,
         Err(_) => {
@@ -163,6 +168,7 @@ fn remove_one(
 
     let branch = git::worktree_branch(&worktree_path)
         .context("failed to determine worktree branch")?;
+    verbose!("worktree '{}' branch: {:?}, path: {}", id, branch, worktree_path.display());
 
     let has_unpushed = check_unpushed(id, &worktree_path, force, branch_cleanup)?;
 

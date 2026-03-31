@@ -1,4 +1,5 @@
 mod commands;
+mod completions;
 mod config;
 mod editor;
 mod git;
@@ -6,11 +7,15 @@ mod include;
 mod output;
 mod prompt;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap_complete::env::CompleteEnv;
 
 #[derive(Parser)]
 #[command(name = "grove", about = "Manage parallel workspaces with git worktrees")]
-struct Cli {
+pub struct Cli {
+    /// Enable verbose output for debugging
+    #[arg(short, long, global = true)]
+    verbose: bool,
     #[command(subcommand)]
     command: Commands,
 }
@@ -59,12 +64,12 @@ enum Commands {
         /// Remove even if the worktree has uncommitted changes
         #[arg(long)]
         force: bool,
-        /// Remove all worktrees
-        #[arg(long)]
-        all: bool,
         /// Remove the worktree you are currently inside
-        #[arg(long)]
+        #[arg(long, display_order = 0)]
         current: bool,
+        /// Remove all worktrees
+        #[arg(long, display_order = 999)]
+        all: bool,
         /// What to do with the branch after removal
         #[arg(long, value_enum)]
         branch: Option<BranchCleanup>,
@@ -115,8 +120,31 @@ enum EditorCommands {
     },
 }
 
+fn completion_command() -> clap::Command {
+    let mut cmd = Cli::command()
+        .disable_help_flag(true)
+        .mut_arg("verbose", |a| a.hide(true).global(false));
+
+    for subcmd in cmd.get_subcommands_mut() {
+        *subcmd = std::mem::take(subcmd).disable_help_flag(true);
+    }
+
+    cmd
+}
+
 fn main() -> anyhow::Result<()> {
+    if std::env::var("COMPLETE").as_deref() == Ok("zsh")
+        && !std::env::args_os().any(|a| a == "--")
+    {
+        print!("zstyle ':completion:*:*:grove:*:*' sort false\n");
+    }
+    if completions::try_complete_subcommand() {
+        std::process::exit(0);
+    }
+    CompleteEnv::with_factory(completion_command).complete();
+
     let cli = Cli::parse();
+    output::set_verbose(cli.verbose);
 
     match cli.command {
         Commands::Config { command } => match command {

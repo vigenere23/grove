@@ -27,21 +27,26 @@ pub fn run(
     // ── Phase 1: gather context & validate ──────────────────────────────
 
     let git_root = git::repo_root().context("failed to find git repository root")?;
+    verbose!("git root: {}", git_root.display());
 
     let global_config = GlobalConfig::load().context("failed to load global config")?;
+    verbose!("global include: {:?}", global_config.include);
 
     let (editor_id, workspace_dir, workspace_include) =
         if let Some(ref ws) = workspace_override {
             let ws_path = git_root.join(ws);
+            verbose!("workspace override: {}", ws_path.display());
             let resolved = workspace::load_workspace_config(&ws_path)
                 .with_context(|| format!("failed to load workspace config from '{ws}'"))?;
             let editor_id = resolved.config.editor;
             global_config.get_editor(&editor_id)?;
             let inc = resolved.config.include;
+            verbose!("workspace config editor={}, include={:?}, config_dir={}", editor_id, inc, resolved.config_dir.display());
             (editor_id, resolved.config_dir, inc)
         } else {
             let cwd =
                 env::current_dir().context("failed to determine current working directory")?;
+            verbose!("cwd: {}", cwd.display());
             match workspace::find_workspace_config(&cwd, &git_root)
                 .context("failed to read workspace config")?
             {
@@ -49,10 +54,12 @@ pub fn run(
                     let editor_id = resolved.config.editor;
                     global_config.get_editor(&editor_id)?;
                     let inc = resolved.config.include;
+                    verbose!("workspace config found: editor={}, include={:?}, config_dir={}", editor_id, inc, resolved.config_dir.display());
                     (editor_id, resolved.config_dir, inc)
                 }
                 None => {
                     let (first_id, _) = global_config.first_editor()?;
+                    verbose!("no workspace config found, using first editor: {}", first_id);
                     (first_id.clone(), git_root.clone(), Vec::new())
                 }
             }
@@ -85,24 +92,26 @@ pub fn run(
     let relative_workspace = workspace_dir
         .strip_prefix(&git_root)
         .unwrap_or_else(|_| workspace_dir.as_ref());
-
-    let mut include_paths = global_config.resolved_include(&editor_id);
-    for path in workspace_include {
-        let qualified = if relative_workspace == Path::new("") {
-            path
-        } else {
-            relative_workspace.join(&path).to_string_lossy().into_owned()
-        };
-        if !include_paths.contains(&qualified) {
-            include_paths.push(qualified);
-        }
-    }
-
-    let copied = include::copy_includes(&git_root, &worktree_path, &include_paths);
+    verbose!("editor_id: {}", editor_id);
+    verbose!("workspace_dir: {}", workspace_dir.display());
+    verbose!("relative_workspace: {}", relative_workspace.display());
 
     let editor_workspace = worktree_path.join(relative_workspace);
+    verbose!("editor_workspace (dest): {}", editor_workspace.display());
+
+    let mut include_paths = global_config.resolved_include(&editor_id);
+    verbose!("resolved include (global+editor): {:?}", include_paths);
+    for path in workspace_include {
+        if !include_paths.contains(&path) {
+            include_paths.push(path);
+        }
+    }
+    verbose!("final include paths: {:?}", include_paths);
+
+    let copied = include::copy_includes(&workspace_dir, &editor_workspace, &include_paths);
 
     let editor_cfg = global_config.get_editor(&editor_id)?;
+    verbose!("opening editor '{}' with command: {}", editor_id, editor_cfg.command);
     editor::open(editor_cfg, &editor_workspace).context("failed to open editor")?;
 
     save_state(&git_root, &actual_id, &editor_id, relative_workspace)?;

@@ -13,12 +13,14 @@ use crate::prompt::{self, SelectItem};
 
 pub fn run(id: Option<String>, workspace_override: Option<String>) -> Result<()> {
     let git_root = git::repo_root().context("failed to find git repository root")?;
+    verbose!("git root: {}", git_root.display());
     let worktrees = git::list_worktrees().context("failed to list worktrees")?;
     let worktree_paths: Vec<_> = worktrees.iter().map(|wt| wt.path.clone()).collect();
 
     let mut state = RepoState::load(&git_root).context("failed to load state")?;
     let pruned = state.prune(&git_root, &worktree_paths);
     if !pruned.is_empty() {
+        verbose!("pruned stale worktrees: {:?}", pruned);
         state.save(&git_root).context("failed to save state")?;
     }
 
@@ -26,6 +28,7 @@ pub fn run(id: Option<String>, workspace_override: Option<String>) -> Result<()>
         Some(id) => id,
         None => select_worktree(&git_root, &worktrees, &state)?,
     };
+    verbose!("opening worktree: {}", id);
 
     let worktree_info = worktrees
         .iter()
@@ -80,8 +83,11 @@ pub fn run(id: Option<String>, workspace_override: Option<String>) -> Result<()>
         }
     };
 
+    verbose!("editor_id: {}, relative_workspace: {}", editor_id, relative_workspace.display());
+
     let editor_cfg = global_config.get_editor(&editor_id)?;
     let editor_workspace = worktree_info.path.join(&relative_workspace);
+    verbose!("editor_workspace: {}", editor_workspace.display());
 
     editor::open(editor_cfg, &editor_workspace).context("failed to open editor")?;
 
