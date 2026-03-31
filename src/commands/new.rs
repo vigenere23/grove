@@ -134,7 +134,7 @@ fn resolve_worktree_id(git_root: &Path, id: &str, branch: &str) -> Result<(Strin
 
     match prompt::ask_worktree_conflict(id, branch)? {
         prompt::WorktreeConflictChoice::OpenExisting => {
-            commands::open::run(id.to_string(), None)?;
+            commands::open::run(Some(id.to_string()), None)?;
             std::process::exit(0);
         }
         prompt::WorktreeConflictChoice::NewName(new_id) => {

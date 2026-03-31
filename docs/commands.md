@@ -131,20 +131,21 @@ Result:
 ## `parai open`
 
 ```
-parai open <ID>
+parai open [ID]
 ```
 
 Reopen an existing worktree in the configured editor.
 
 | Argument | Description            |
 | -------- | ---------------------- |
-| `<ID>`   | Worktree identifier    |
+| `[ID]`   | Worktree identifier (optional) |
 
 ### What it does
 
-1. Looks up the worktree in the state file.
-2. Verifies the worktree directory still exists.
-3. Opens the editor at the stored workspace path.
+1. If `ID` is omitted, displays an interactive list of worktrees and lets you pick one with arrow keys / tab + enter.
+2. Looks up the worktree in the state file.
+3. Verifies the worktree directory still exists.
+4. Opens the editor at the stored workspace path.
 
 ### Errors
 

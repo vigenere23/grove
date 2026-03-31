@@ -9,10 +9,16 @@ use crate::config::workspace;
 use crate::editor;
 use crate::git;
 use crate::output::*;
+use crate::prompt::{self, SelectItem};
 
-pub fn run(id: String, workspace_override: Option<String>) -> Result<()> {
+pub fn run(id: Option<String>, workspace_override: Option<String>) -> Result<()> {
     let git_root = git::repo_root().context("failed to find git repository root")?;
     let mut state = RepoState::load(&git_root).context("failed to load state")?;
+
+    let id = match id {
+        Some(id) => id,
+        None => select_worktree(&git_root)?,
+    };
 
     let worktree_info = git::find_worktree(&git_root, &id)
         .context("failed to look up worktree")?
@@ -110,4 +116,56 @@ fn resolve_editor(
             Ok((first_id.clone(), std::path::PathBuf::new()))
         }
     }
+}
+
+fn select_worktree(git_root: &Path) -> Result<String> {
+    let worktrees = git::list_worktrees().context("failed to list worktrees")?;
+    let state = RepoState::load(git_root).unwrap_or_default();
+
+    let current_root = git::current_worktree_root().ok();
+    let is_in_worktree = current_root
+        .as_ref()
+        .is_some_and(|root| *root != *git_root);
+
+    let items: Vec<SelectItem> = worktrees
+        .iter()
+        .filter(|wt| wt.path != *git_root)
+        .map(|wt| {
+            let id = state
+                .worktrees
+                .iter()
+                .find(|(id, _)| git::worktree_dir(git_root, id) == wt.path)
+                .map(|(id, _)| id.clone())
+                .unwrap_or_else(|| {
+                    git::worktree_id(&wt.path).unwrap_or_else(|| "?".to_string())
+                });
+
+            let branch = wt
+                .branch
+                .as_deref()
+                .unwrap_or(if wt.is_bare { "(bare)" } else { "(detached)" });
+
+            let is_current = is_in_worktree
+                && current_root.as_ref().is_some_and(|root| wt.path == *root);
+
+            let label = if is_current {
+                format!("{id}  ({branch})  (current)")
+            } else {
+                format!("{id}  ({branch})")
+            };
+
+            SelectItem {
+                label,
+                id,
+                disabled: is_current,
+                ..Default::default()
+            }
+        })
+        .collect();
+
+    if items.is_empty() {
+        bail!("no worktrees found — create one first with parai new");
+    }
+
+    prompt::select("Open worktree:", &items)
 }

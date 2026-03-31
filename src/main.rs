@@ -45,8 +45,8 @@ enum Commands {
     },
     /// Reopen an existing worktree in the editor
     Open {
-        /// Worktree identifier
-        id: String,
+        /// Worktree identifier (interactive selection if omitted)
+        id: Option<String>,
         /// Override the workspace directory (must contain a .parai.toml)
         #[arg(short, long)]
         workspace: Option<String>,
