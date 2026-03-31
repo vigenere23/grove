@@ -1,10 +1,59 @@
-use anyhow::{Context, Result};
+use std::env;
+use std::process::Command;
+
+use anyhow::{Context, Result, bail};
 
 use crate::config::global::GlobalConfig;
 use crate::output::*;
 
+pub fn edit() -> Result<()> {
+    let path = GlobalConfig::path().context("failed to determine config path")?;
+
+    if !path.exists() {
+        let config = GlobalConfig::default();
+        config.save().context("failed to create default config")?;
+    }
+
+    let editor = env::var("VISUAL")
+        .or_else(|_| env::var("EDITOR"))
+        .unwrap_or_else(|_| "vi".to_string());
+
+    let parts =
+        shell_words::split(&editor).context("failed to parse $EDITOR/$VISUAL command")?;
+    let (program, args) = parts
+        .split_first()
+        .ok_or_else(|| anyhow::anyhow!("$EDITOR/$VISUAL is empty"))?;
+
+    let status = Command::new(program)
+        .args(args)
+        .arg(&path)
+        .status()
+        .with_context(|| format!("failed to launch editor '{editor}'"))?;
+
+    if !status.success() {
+        bail!("editor exited with {status}");
+    }
+
+    println!(
+        "{} Config saved at {}",
+        GREEN.paint("✔"),
+        path.display(),
+    );
+
+    Ok(())
+}
+
 pub fn list_editors() -> Result<()> {
     let config = GlobalConfig::load().context("failed to load global config")?;
+
+    if !config.include.is_empty() {
+        println!(
+            "{} {}",
+            DIM.paint("include:"),
+            config.include.join(", "),
+        );
+        println!();
+    }
 
     if config.editors.is_empty() {
         println!("{}", DIM.paint("No editors configured."));
@@ -19,14 +68,17 @@ pub fn list_editors() -> Result<()> {
         println!("{}:", BOLD_CYAN.paint(id));
         println!("  {}    {}", DIM.paint("name:"), editor.name);
         println!("  {} {}", DIM.paint("command:"), editor.command);
+        if !editor.include.is_empty() {
+            println!("  {} {}", DIM.paint("include:"), editor.include.join(", "));
+        }
     }
 
     Ok(())
 }
 
-pub fn add_editor(id: String, name: String, command: String) -> Result<()> {
+pub fn add_editor(id: String, name: String, command: String, include: Vec<String>) -> Result<()> {
     let mut config = GlobalConfig::load().context("failed to load global config")?;
-    config.add_editor(id.clone(), name, command)?;
+    config.add_editor(id.clone(), name, command, include)?;
     config.save().context("failed to save global config")?;
     println!("{} Editor {} added", GREEN.paint("✔"), BOLD_CYAN.paint(&id));
     Ok(())

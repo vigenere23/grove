@@ -10,7 +10,7 @@ use crate::editor;
 use crate::git;
 use crate::output::*;
 
-pub fn run(id: String) -> Result<()> {
+pub fn run(id: String, workspace_override: Option<String>) -> Result<()> {
     let git_root = git::repo_root().context("failed to find git repository root")?;
     let mut state = RepoState::load(&git_root).context("failed to load state")?;
 
@@ -27,22 +27,46 @@ pub fn run(id: String) -> Result<()> {
 
     let global_config = GlobalConfig::load().context("failed to load global config")?;
 
-    let (editor_id, relative_workspace) = match state.get(&id) {
-        Ok(wt_state) => (wt_state.editor.clone(), wt_state.workspace.clone()),
-        Err(_) => {
-            let (editor_id, rel_workspace) =
-                resolve_editor(&global_config, &worktree_info.path)?;
+    let (editor_id, relative_workspace) = if let Some(ref ws) = workspace_override {
+        let ws_path = git_root.join(ws);
+        let resolved = workspace::load_workspace_config(&ws_path)
+            .with_context(|| format!("failed to load workspace config from '{ws}'"))?;
+        let editor_id = resolved.config.editor;
+        global_config.get_editor(&editor_id)?;
+        let rel_workspace = resolved
+            .config_dir
+            .strip_prefix(&git_root)
+            .unwrap_or_else(|_| resolved.config_dir.as_ref())
+            .to_path_buf();
 
-            state.add(
-                id.clone(),
-                WorktreeState {
-                    editor: editor_id.clone(),
-                    workspace: rel_workspace.clone(),
-                },
-            );
-            state.save(&git_root).context("failed to save state")?;
+        state.add(
+            id.clone(),
+            WorktreeState {
+                editor: editor_id.clone(),
+                workspace: rel_workspace.clone(),
+            },
+        );
+        state.save(&git_root).context("failed to save state")?;
 
-            (editor_id, rel_workspace)
+        (editor_id, rel_workspace)
+    } else {
+        match state.get(&id) {
+            Ok(wt_state) => (wt_state.editor.clone(), wt_state.workspace.clone()),
+            Err(_) => {
+                let (editor_id, rel_workspace) =
+                    resolve_editor(&global_config, &worktree_info.path)?;
+
+                state.add(
+                    id.clone(),
+                    WorktreeState {
+                        editor: editor_id.clone(),
+                        workspace: rel_workspace.clone(),
+                    },
+                );
+                state.save(&git_root).context("failed to save state")?;
+
+                (editor_id, rel_workspace)
+            }
         }
     };
 

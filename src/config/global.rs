@@ -46,10 +46,14 @@ pub enum GlobalConfigError {
 pub struct EditorConfig {
     pub name: String,
     pub command: String,
+    #[serde(default)]
+    pub include: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GlobalConfig {
+    #[serde(default)]
+    pub include: Vec<String>,
     #[serde(default)]
     pub editors: BTreeMap<String, EditorConfig>,
 }
@@ -101,12 +105,14 @@ impl GlobalConfig {
         id: String,
         name: String,
         command: String,
+        include: Vec<String>,
     ) -> Result<(), GlobalConfigError> {
         if self.editors.contains_key(&id) {
             return Err(GlobalConfigError::EditorAlreadyExists(id));
         }
 
-        self.editors.insert(id, EditorConfig { name, command });
+        self.editors
+            .insert(id, EditorConfig { name, command, include });
         Ok(())
     }
 
@@ -128,5 +134,27 @@ impl GlobalConfig {
             .iter()
             .next()
             .ok_or(GlobalConfigError::NoEditors)
+    }
+
+    /// Merge global-level `include` with editor-specific `include`, deduplicating.
+    pub fn resolved_include(&self, editor_id: &str) -> Vec<String> {
+        let mut seen = std::collections::HashSet::new();
+        let mut result = Vec::new();
+
+        for path in &self.include {
+            if seen.insert(path.clone()) {
+                result.push(path.clone());
+            }
+        }
+
+        if let Some(editor) = self.editors.get(editor_id) {
+            for path in &editor.include {
+                if seen.insert(path.clone()) {
+                    result.push(path.clone());
+                }
+            }
+        }
+
+        result
     }
 }

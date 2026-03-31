@@ -2,6 +2,7 @@ mod commands;
 mod config;
 mod editor;
 mod git;
+mod include;
 mod output;
 mod prompt;
 
@@ -23,7 +24,11 @@ enum Commands {
     },
     /// List all worktrees and their status
     #[command(alias = "list")]
-    Ls,
+    Ls {
+        /// Show full details for each worktree
+        #[arg(long)]
+        details: bool,
+    },
     /// Create a worktree and open an editor
     New {
         /// Worktree identifier
@@ -32,18 +37,24 @@ enum Commands {
         #[arg(long)]
         from: Option<String>,
         /// New branch name to create (default: wip/<id>)
-        #[arg(long)]
+        #[arg(short, long)]
         branch: Option<String>,
+        /// Override the workspace directory (must contain a .parai.toml)
+        #[arg(short, long)]
+        workspace: Option<String>,
     },
     /// Reopen an existing worktree in the editor
     Open {
         /// Worktree identifier
         id: String,
+        /// Override the workspace directory (must contain a .parai.toml)
+        #[arg(short, long)]
+        workspace: Option<String>,
     },
     /// Remove a worktree
     #[command(alias = "remove")]
     Rm {
-        /// Worktree identifier (omit when using --all)
+        /// Worktree identifier (omit when using --all or --current)
         id: Option<String>,
         /// Remove even if the worktree has uncommitted changes
         #[arg(long)]
@@ -51,6 +62,9 @@ enum Commands {
         /// Remove all worktrees
         #[arg(long)]
         all: bool,
+        /// Remove the worktree you are currently inside
+        #[arg(long)]
+        current: bool,
         /// What to do with the branch after removal
         #[arg(long, value_enum)]
         branch: Option<BranchCleanup>,
@@ -59,6 +73,8 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum ConfigCommands {
+    /// Open the global config file in your editor
+    Edit,
     /// Manage editor configurations
     Editors {
         #[command(subcommand)]
@@ -88,6 +104,9 @@ enum EditorCommands {
         /// Launch command (use $workspace for the workspace path placeholder)
         #[arg(long)]
         command: String,
+        /// Paths to copy into new worktrees when using this editor (repeatable)
+        #[arg(long)]
+        include: Vec<String>,
     },
     /// Remove an editor
     Remove {
@@ -101,22 +120,26 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Config { command } => match command {
+            ConfigCommands::Edit => commands::config::edit(),
             ConfigCommands::Editors { command } => match command {
                 EditorCommands::List => commands::config::list_editors(),
-                EditorCommands::Add { id, name, command } => {
-                    commands::config::add_editor(id, name, command)
+                EditorCommands::Add { id, name, command, include } => {
+                    commands::config::add_editor(id, name, command, include)
                 }
                 EditorCommands::Remove { id } => commands::config::remove_editor(id),
             },
         },
-        Commands::Ls => commands::ls::run(),
-        Commands::New { id, from, branch } => commands::new::run(id, from, branch),
-        Commands::Open { id } => commands::open::run(id),
+        Commands::Ls { details } => commands::ls::run(details),
+        Commands::New { id, from, branch, workspace } => {
+            commands::new::run(id, from, branch, workspace)
+        }
+        Commands::Open { id, workspace } => commands::open::run(id, workspace),
         Commands::Rm {
             id,
             force,
             all,
+            current,
             branch,
-        } => commands::rm::run(id, force, all, branch),
+        } => commands::rm::run(id, force, all, current, branch),
     }
 }

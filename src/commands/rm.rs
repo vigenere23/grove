@@ -11,22 +11,49 @@ pub fn run(
     id: Option<String>,
     force: bool,
     all: bool,
+    current: bool,
     branch_cleanup: Option<BranchCleanup>,
 ) -> Result<()> {
     if all {
-        if id.is_some() {
-            bail!("cannot specify both an id and --all");
+        if id.is_some() || current {
+            bail!("cannot combine --all with an id or --current");
         }
         return run_all(force, branch_cleanup);
     }
 
-    let id = id.context("worktree id is required (or use --all)")?;
+    if current {
+        if id.is_some() {
+            bail!("cannot specify both an id and --current");
+        }
+        return run_current(force, branch_cleanup);
+    }
+
+    let id = id.context("worktree id is required (or use --all / --current)")?;
     let git_root = git::repo_root().context("failed to find git repository root")?;
     let mut state = RepoState::load(&git_root).context("failed to load state")?;
 
     remove_one(&id, &git_root, &mut state, force, &branch_cleanup)?;
 
     state.save(&git_root).context("failed to save state")?;
+    Ok(())
+}
+
+fn run_current(force: bool, branch_cleanup: Option<BranchCleanup>) -> Result<()> {
+    let git_root = git::repo_root().context("failed to find git repository root")?;
+    let current_root =
+        git::current_worktree_root().context("failed to determine current worktree root")?;
+
+    if current_root == git_root {
+        bail!("you are in the main worktree — --current can only be used inside a parai worktree");
+    }
+
+    let id = git::worktree_id(&current_root)
+        .context("failed to derive worktree id from current directory")?;
+
+    let mut state = RepoState::load(&git_root).context("failed to load state")?;
+    remove_one(&id, &git_root, &mut state, force, &branch_cleanup)?;
+    state.save(&git_root).context("failed to save state")?;
+
     Ok(())
 }
 

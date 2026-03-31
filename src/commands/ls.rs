@@ -7,7 +7,7 @@ use crate::git;
 use crate::git::WorktreeInfo;
 use crate::output::*;
 
-pub fn run() -> Result<()> {
+pub fn run(details: bool) -> Result<()> {
     let git_root = git::repo_root().context("failed to find git repository root")?;
     let worktrees = git::list_worktrees().context("failed to list worktrees")?;
     let state = RepoState::load(&git_root).unwrap_or_default();
@@ -40,14 +40,14 @@ pub fn run() -> Result<()> {
     }
 
     for (i, wt) in non_main.iter().enumerate() {
-        if i > 0 {
+        if details && i > 0 {
             println!();
         }
 
         let is_current = is_in_worktree
             && current_root.as_ref().is_some_and(|root| wt.path == *root);
 
-        print_worktree(wt, is_current, &state, &git_root);
+        print_worktree(wt, is_current, &state, &git_root, details);
     }
 
     Ok(())
@@ -86,13 +86,13 @@ fn format_status(wt: &WorktreeInfo) -> String {
     }
 }
 
-fn print_worktree(wt: &WorktreeInfo, is_current: bool, state: &RepoState, git_root: &Path) {
-    let branch_display = match &wt.branch {
-        Some(b) => b.as_str(),
-        None if wt.is_bare => "(bare)",
-        None => "(detached)",
-    };
-
+fn print_worktree(
+    wt: &WorktreeInfo,
+    is_current: bool,
+    state: &RepoState,
+    git_root: &Path,
+    details: bool,
+) {
     let status = format_status(wt);
     let current_marker = if is_current { "▸ " } else { "  " };
 
@@ -105,9 +105,6 @@ fn print_worktree(wt: &WorktreeInfo, is_current: bool, state: &RepoState, git_ro
         Some((id, _)) => id.clone(),
         None => git::worktree_id(&wt.path).unwrap_or_else(|| "?".to_string()),
     };
-
-    let workspace_display = state_lookup
-        .map(|(_, ws)| format!("    workspace: {}", ws.workspace.display()));
 
     let tracked_marker = if state_lookup.is_none() {
         format!(" {}", DIM.paint("(untracked)"))
@@ -122,9 +119,19 @@ fn print_worktree(wt: &WorktreeInfo, is_current: bool, state: &RepoState, git_ro
     };
 
     println!("{current_marker}{id_styled}{status}{tracked_marker}");
-    println!("    {}   {}", DIM.paint("path:"), wt.path.display());
-    println!("    {} {}", DIM.paint("branch:"), CYAN.paint(branch_display));
-    if let Some(ws) = workspace_display {
-        println!("{ws}");
+
+    if details {
+        let branch_display = match &wt.branch {
+            Some(b) => b.as_str(),
+            None if wt.is_bare => "(bare)",
+            None => "(detached)",
+        };
+
+        println!("    {}   {}", DIM.paint("path:"), wt.path.display());
+        println!("    {} {}", DIM.paint("branch:"), CYAN.paint(branch_display));
+
+        if let Some((_, ws)) = state_lookup {
+            println!("    workspace: {}", ws.workspace.display());
+        }
     }
 }

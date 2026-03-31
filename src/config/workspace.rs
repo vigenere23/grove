@@ -17,11 +17,16 @@ pub enum WorkspaceConfigError {
         path: PathBuf,
         source: toml::de::Error,
     },
+
+    #[error("no .parai.toml found in {0}")]
+    NotFound(PathBuf),
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct WorkspaceConfig {
     pub editor: String,
+    #[serde(default)]
+    pub include: Vec<String>,
 }
 
 pub struct ResolvedWorkspace {
@@ -31,6 +36,34 @@ pub struct ResolvedWorkspace {
 }
 
 const CONFIG_FILENAME: &str = ".parai.toml";
+
+/// Load the workspace config from a specific directory.
+/// Returns an error if `.parai.toml` does not exist there.
+pub fn load_workspace_config(dir: &Path) -> Result<ResolvedWorkspace, WorkspaceConfigError> {
+    let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+    let config_path = dir.join(CONFIG_FILENAME);
+
+    if !config_path.is_file() {
+        return Err(WorkspaceConfigError::NotFound(dir));
+    }
+
+    let contents =
+        fs::read_to_string(&config_path).map_err(|e| WorkspaceConfigError::Read {
+            path: config_path.clone(),
+            source: e,
+        })?;
+
+    let config: WorkspaceConfig =
+        toml::from_str(&contents).map_err(|e| WorkspaceConfigError::Parse {
+            path: config_path,
+            source: e,
+        })?;
+
+    Ok(ResolvedWorkspace {
+        config,
+        config_dir: dir,
+    })
+}
 
 /// Walk from `start` up to (and including) `git_root`, looking for `.parai.toml`.
 /// Returns the most specific (closest to `start`) config found.

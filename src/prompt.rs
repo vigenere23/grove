@@ -25,11 +25,12 @@ pub enum BranchConflictChoice {
     Abort,
 }
 
-pub fn ask_branch_conflict(branch: &str) -> Result<BranchConflictChoice> {
+pub fn ask_branch_conflict(id: &str, branch: &str) -> Result<BranchConflictChoice> {
     println!(
-        "{} Branch {} already exists.",
+        "{} Branch {} already exists (worktree {}).",
         YELLOW.paint("!"),
         BOLD_CYAN.paint(branch),
+        BOLD_CYAN.paint(id),
     );
     println!("  [r] Reuse the existing branch");
     println!("  [n] Create with a new branch name");
@@ -54,11 +55,12 @@ pub enum WorktreeConflictChoice {
     Abort,
 }
 
-pub fn ask_worktree_conflict(id: &str) -> Result<WorktreeConflictChoice> {
+pub fn ask_worktree_conflict(id: &str, branch: &str) -> Result<WorktreeConflictChoice> {
     println!(
-        "{} Worktree {} already exists.",
+        "{} Worktree {} already exists (branch {}).",
         YELLOW.paint("!"),
         BOLD_CYAN.paint(id),
+        BOLD_CYAN.paint(branch),
     );
     println!("  [o] Open the existing worktree");
     println!("  [n] Create with a new name");

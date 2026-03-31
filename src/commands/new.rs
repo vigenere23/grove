@@ -9,6 +9,7 @@ use crate::config::state::{RepoState, WorktreeState};
 use crate::config::workspace;
 use crate::editor;
 use crate::git;
+use crate::include;
 use crate::output::*;
 use crate::prompt;
 
@@ -17,27 +18,43 @@ enum BranchAction {
     Reuse { name: String },
 }
 
-pub fn run(id: String, from: Option<String>, branch: Option<String>) -> Result<()> {
+pub fn run(
+    id: String,
+    from: Option<String>,
+    branch: Option<String>,
+    workspace_override: Option<String>,
+) -> Result<()> {
     // ── Phase 1: gather context & validate ──────────────────────────────
 
     let git_root = git::repo_root().context("failed to find git repository root")?;
 
-    let cwd = env::current_dir().context("failed to determine current working directory")?;
-
     let global_config = GlobalConfig::load().context("failed to load global config")?;
 
-    let (editor_id, workspace_dir) =
-        match workspace::find_workspace_config(&cwd, &git_root)
-            .context("failed to read workspace config")?
-        {
-            Some(resolved) => {
-                let editor_id = resolved.config.editor;
-                global_config.get_editor(&editor_id)?;
-                (editor_id, resolved.config_dir)
-            }
-            None => {
-                let (first_id, _) = global_config.first_editor()?;
-                (first_id.clone(), git_root.clone())
+    let (editor_id, workspace_dir, workspace_include) =
+        if let Some(ref ws) = workspace_override {
+            let ws_path = git_root.join(ws);
+            let resolved = workspace::load_workspace_config(&ws_path)
+                .with_context(|| format!("failed to load workspace config from '{ws}'"))?;
+            let editor_id = resolved.config.editor;
+            global_config.get_editor(&editor_id)?;
+            let inc = resolved.config.include;
+            (editor_id, resolved.config_dir, inc)
+        } else {
+            let cwd =
+                env::current_dir().context("failed to determine current working directory")?;
+            match workspace::find_workspace_config(&cwd, &git_root)
+                .context("failed to read workspace config")?
+            {
+                Some(resolved) => {
+                    let editor_id = resolved.config.editor;
+                    global_config.get_editor(&editor_id)?;
+                    let inc = resolved.config.include;
+                    (editor_id, resolved.config_dir, inc)
+                }
+                None => {
+                    let (first_id, _) = global_config.first_editor()?;
+                    (first_id.clone(), git_root.clone(), Vec::new())
+                }
             }
         };
 
@@ -48,9 +65,9 @@ pub fn run(id: String, from: Option<String>, branch: Option<String>) -> Result<(
     let desired_branch = branch.unwrap_or_else(|| format!("wip/{id}"));
 
     let (actual_id, worktree_path) =
-        resolve_worktree_id(&git_root, &id)?;
+        resolve_worktree_id(&git_root, &id, &desired_branch)?;
 
-    let branch_action = resolve_branch(&from_branch, &desired_branch, explicit_branch, &actual_id)?;
+    let branch_action = resolve_branch(&actual_id, &from_branch, &desired_branch, explicit_branch)?;
 
     // ── Phase 2: execute actions ────────────────────────────────────────
 
@@ -66,6 +83,15 @@ pub fn run(id: String, from: Option<String>, branch: Option<String>) -> Result<(
             name.as_str()
         }
     };
+
+    let mut include_paths = global_config.resolved_include(&editor_id);
+    for path in workspace_include {
+        if !include_paths.contains(&path) {
+            include_paths.push(path);
+        }
+    }
+
+    let copied = include::copy_includes(&git_root, &worktree_path, &include_paths);
 
     let relative_workspace = workspace_dir
         .strip_prefix(&git_root)
@@ -85,6 +111,9 @@ pub fn run(id: String, from: Option<String>, branch: Option<String>) -> Result<(
         BOLD_CYAN.paint(actual_branch),
         worktree_path.display(),
     );
+    for path in &copied {
+        println!("  {} {}", DIM.paint("copied"), path);
+    }
     println!(
         "{} Editor opened at {}",
         GREEN.paint("✔"),
@@ -96,16 +125,16 @@ pub fn run(id: String, from: Option<String>, branch: Option<String>) -> Result<(
 
 /// Resolve the worktree id/path, prompting the user if a worktree with that
 /// name already exists. Returns the final (id, path) to use.
-fn resolve_worktree_id(git_root: &Path, id: &str) -> Result<(String, PathBuf)> {
+fn resolve_worktree_id(git_root: &Path, id: &str, branch: &str) -> Result<(String, PathBuf)> {
     let worktree_path = git::worktree_dir(git_root, id);
 
     if !worktree_path.exists() {
         return Ok((id.to_string(), worktree_path));
     }
 
-    match prompt::ask_worktree_conflict(id)? {
+    match prompt::ask_worktree_conflict(id, branch)? {
         prompt::WorktreeConflictChoice::OpenExisting => {
-            commands::open::run(id.to_string())?;
+            commands::open::run(id.to_string(), None)?;
             std::process::exit(0);
         }
         prompt::WorktreeConflictChoice::NewName(new_id) => {
@@ -123,10 +152,10 @@ fn resolve_worktree_id(git_root: &Path, id: &str) -> Result<(String, PathBuf)> {
 }
 
 fn resolve_branch(
+    id: &str,
     from_branch: &str,
     desired_branch: &str,
     explicit_branch: bool,
-    id: &str,
 ) -> Result<BranchAction> {
     if !git::branch_exists(desired_branch).context("failed to check if branch exists")? {
         return Ok(BranchAction::Create {
@@ -150,7 +179,7 @@ fn resolve_branch(
         }
     }
 
-    match prompt::ask_branch_conflict(desired_branch)? {
+    match prompt::ask_branch_conflict(id, desired_branch)? {
         prompt::BranchConflictChoice::Reuse => Ok(BranchAction::Reuse {
             name: desired_branch.to_string(),
         }),
