@@ -79,7 +79,7 @@ pub fn worktrees_base_dir(git_root: &Path) -> PathBuf {
         .unwrap_or_else(|| "repo".to_string());
 
     let parent = git_root.parent().unwrap_or(git_root);
-    parent.join(format!(".{repo_name}_worktrees"))
+    parent.join(format!(".grove__{repo_name}"))
 }
 
 pub fn worktree_dir(git_root: &Path, id: &str) -> PathBuf {
@@ -290,6 +290,16 @@ pub fn remove_worktree(worktree_path: &Path, force: bool) -> Result<(), GitError
         return Err(GitError::CommandFailed(stderr));
     }
 
+    // git worktree remove leaves the directory behind when untracked files
+    // exist (e.g. files copied via `include`). Clean up the leftovers.
+    if worktree_path.exists() {
+        std::fs::remove_dir_all(worktree_path).map_err(|e| {
+            GitError::CommandFailed(format!(
+                "worktree removed from git but failed to delete leftover directory: {e}"
+            ))
+        })?;
+    }
+
     Ok(())
 }
 
@@ -328,14 +338,14 @@ pub fn worktree_id(worktree_path: &Path) -> Option<String> {
         .map(|n| n.to_string_lossy().to_string())
 }
 
-/// Find a worktree by id. Checks the parai worktree dir first, then scans
+/// Find a worktree by id. Checks the grove worktree dir first, then scans
 /// all git worktrees for a directory whose name matches the id.
 pub fn find_worktree(git_root: &Path, id: &str) -> Result<Option<WorktreeInfo>, GitError> {
-    let parai_path = worktree_dir(git_root, id);
+    let grove_path = worktree_dir(git_root, id);
     let worktrees = list_worktrees()?;
 
     for wt in worktrees {
-        if wt.path == parai_path {
+        if wt.path == grove_path {
             return Ok(Some(wt));
         }
         if wt.path != git_root && worktree_id(&wt.path).as_deref() == Some(id) {

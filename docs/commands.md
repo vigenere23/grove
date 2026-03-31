@@ -1,6 +1,6 @@
 # Command Reference
 
-## `parai config editors list`
+## `grove config editors list`
 
 List all editors defined in the global config.
 
@@ -19,13 +19,13 @@ If no editors are configured, prints a hint to add one.
 
 ---
 
-## `parai config editors add`
+## `grove config editors add`
 
 ```
-parai config editors add <ID> --name <NAME> --command <COMMAND>
+grove config editors add <ID> --name <NAME> --command <COMMAND>
 ```
 
-Register a new editor in the global config (`~/.config/parai/config.toml`).
+Register a new editor in the global config (`~/.config/grove/config.toml`).
 
 | Argument      | Description                                                        |
 | ------------- | ------------------------------------------------------------------ |
@@ -36,7 +36,7 @@ Register a new editor in the global config (`~/.config/parai/config.toml`).
 **Example:**
 
 ```bash
-parai config editors add code --name "VSCode" --command "code \$workspace"
+grove config editors add code --name "VSCode" --command "code \$workspace"
 ```
 
 **Errors:**
@@ -47,10 +47,10 @@ parai config editors add code --name "VSCode" --command "code \$workspace"
 
 ---
 
-## `parai config editors remove`
+## `grove config editors remove`
 
 ```
-parai config editors remove <ID>
+grove config editors remove <ID>
 ```
 
 Remove an editor from the global config.
@@ -67,10 +67,10 @@ Remove an editor from the global config.
 
 ---
 
-## `parai new`
+## `grove new`
 
 ```
-parai new <ID> [--from <BRANCH>] [--branch <BRANCH>]
+grove new <ID> [--from <BRANCH>] [--branch <BRANCH>]
 ```
 
 Create a git worktree and open the configured editor.
@@ -84,12 +84,12 @@ Create a git worktree and open the configured editor.
 ### What it does
 
 1. **Finds the git root** of the current repository.
-2. **Creates a worktree** at `<git-root>/../.<repo-name>_worktrees/<ID>`.
+2. **Creates a worktree** at `<git-root>/../.grove__<repo-name>/<ID>`.
 3. **Resolves the editor:**
-   - Walks from the current directory up to the git root looking for `.parai.toml` files.
+   - Walks from the current directory up to the git root looking for `.grove.toml` files.
    - Uses the `editor` field from the most specific (closest) config found.
-   - If no `.parai.toml` exists, falls back to the first editor in the global config.
-4. **Opens the editor** at `<worktree-path>/<workspace-path>`, where `<workspace-path>` is the relative path from the git root to the directory containing the selected `.parai.toml`.
+   - If no `.grove.toml` exists, falls back to the first editor in the global config.
+4. **Opens the editor** at `<worktree-path>/<workspace-path>`, where `<workspace-path>` is the relative path from the git root to the directory containing the selected `.grove.toml`.
 
 ### Example
 
@@ -97,21 +97,21 @@ Given this layout:
 
 ```
 /home/project/              <- git root
-/home/project/.parai.toml   <- editor = "cursor"
+/home/project/.grove.toml   <- editor = "cursor"
 /home/project/moduleA/
-/home/project/moduleA/.parai.toml  <- editor = "code"
+/home/project/moduleA/.grove.toml  <- editor = "code"
 ```
 
 Running from `/home/project/moduleA`:
 
 ```bash
-parai new featureX --from main --branch feat/test-123/new-command
+grove new featureX --from main --branch feat/test-123/new-command
 ```
 
 Result:
 
-1. Worktree created at `/home/.project_worktrees/featureX` on branch `feat/test-123/new-command` from `main`.
-2. Editor `code` (from `moduleA/.parai.toml`) launched at `/home/.project_worktrees/featureX/moduleA`.
+1. Worktree created at `/home/.grove__project/featureX` on branch `feat/test-123/new-command` from `main`.
+2. Editor `code` (from `moduleA/.grove.toml`) launched at `/home/.grove__project/featureX/moduleA`.
 
 ### Errors
 
@@ -121,17 +121,17 @@ Result:
 | HEAD is detached and `--from` not provided         | `could not determine the current branch — HEAD may be detached`         |
 | Worktree directory already exists                  | `worktree already exists at <path>`                                     |
 | Git worktree command fails                         | `git command failed: <git stderr>`                                      |
-| `.parai.toml` references an unknown editor ID      | `editor '<ID>' not found`                                               |
-| No `.parai.toml` found and no editors in global config | `no editors configured — add one with parai config editors add`     |
+| `.grove.toml` references an unknown editor ID      | `editor '<ID>' not found`                                               |
+| No `.grove.toml` found and no editors in global config | `no editors configured — add one with grove config editors add`     |
 | Editor command is empty                            | `editor command is empty`                                               |
 | Editor binary cannot be executed                   | `failed to launch editor '<command>': <OS error>`                       |
 
 ---
 
-## `parai open`
+## `grove open`
 
 ```
-parai open [ID]
+grove open [ID]
 ```
 
 Reopen an existing worktree in the configured editor.
@@ -158,9 +158,9 @@ Reopen an existing worktree in the configured editor.
 
 ---
 
-## `parai ls`
+## `grove ls`
 
-**Alias:** `parai list`
+**Alias:** `grove list`
 
 List all worktrees and their status.
 
@@ -178,13 +178,13 @@ The current worktree (if you're inside one) is marked with `*` and listed first.
 
 ---
 
-## `parai rm`
+## `grove rm`
 
-**Alias:** `parai remove`
+**Alias:** `grove remove`
 
 ```
-parai rm <ID> [--force] [--branch <MODE>]
-parai rm --all [--force] [--branch <MODE>]
+grove rm <ID> [--force] [--branch <MODE>]
+grove rm --all [--force] [--branch <MODE>]
 ```
 
 Remove a worktree and clean up state.
@@ -219,22 +219,22 @@ With `--all`, all tracked worktrees are removed. Errors on individual worktrees 
 
 ```bash
 # Remove a clean worktree
-parai rm my-feature
+grove rm my-feature
 
 # Force-remove a dirty worktree
-parai rm my-feature --force
+grove rm my-feature --force
 
 # Remove and delete the local branch
-parai rm my-feature --branch delete
+grove rm my-feature --branch delete
 
 # Remove and delete both local and remote branches
-parai rm my-feature --branch delete-remote
+grove rm my-feature --branch delete-remote
 
 # Remove all worktrees
-parai rm --all
+grove rm --all
 
 # Force-remove all worktrees and delete all branches
-parai rm --all --force --branch delete
+grove rm --all --force --branch delete
 ```
 
 ### Errors

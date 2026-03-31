@@ -64,10 +64,8 @@ pub fn run(
     let explicit_branch = branch.is_some();
     let desired_branch = branch.unwrap_or_else(|| format!("wip/{id}"));
 
-    let (actual_id, worktree_path) =
-        resolve_worktree_id(&git_root, &id, &desired_branch)?;
-
-    let branch_action = resolve_branch(&actual_id, &from_branch, &desired_branch, explicit_branch)?;
+    let (actual_id, worktree_path, branch_action) =
+        resolve_conflicts(&git_root, &id, &from_branch, &desired_branch, explicit_branch)?;
 
     // ── Phase 2: execute actions ────────────────────────────────────────
 
@@ -84,18 +82,23 @@ pub fn run(
         }
     };
 
+    let relative_workspace = workspace_dir
+        .strip_prefix(&git_root)
+        .unwrap_or_else(|_| workspace_dir.as_ref());
+
     let mut include_paths = global_config.resolved_include(&editor_id);
     for path in workspace_include {
-        if !include_paths.contains(&path) {
-            include_paths.push(path);
+        let qualified = if relative_workspace == Path::new("") {
+            path
+        } else {
+            relative_workspace.join(&path).to_string_lossy().into_owned()
+        };
+        if !include_paths.contains(&qualified) {
+            include_paths.push(qualified);
         }
     }
 
     let copied = include::copy_includes(&git_root, &worktree_path, &include_paths);
-
-    let relative_workspace = workspace_dir
-        .strip_prefix(&git_root)
-        .unwrap_or_else(|_| workspace_dir.as_ref());
 
     let editor_workspace = worktree_path.join(relative_workspace);
 
@@ -123,16 +126,104 @@ pub fn run(
     Ok(())
 }
 
-/// Resolve the worktree id/path, prompting the user if a worktree with that
-/// name already exists. Returns the final (id, path) to use.
-fn resolve_worktree_id(git_root: &Path, id: &str, branch: &str) -> Result<(String, PathBuf)> {
+/// Check both worktree and branch existence upfront, then present the
+/// appropriate prompt for the actual situation. Returns the final
+/// (id, worktree_path, branch_action).
+fn resolve_conflicts(
+    git_root: &Path,
+    id: &str,
+    from_branch: &str,
+    desired_branch: &str,
+    explicit_branch: bool,
+) -> Result<(String, PathBuf, BranchAction)> {
     let worktree_path = git::worktree_dir(git_root, id);
+    let wt_exists = worktree_path.exists();
+    let branch_exists =
+        git::branch_exists(desired_branch).context("failed to check if branch exists")?;
 
-    if !worktree_path.exists() {
-        return Ok((id.to_string(), worktree_path));
+    match (wt_exists, branch_exists) {
+        // ── Nothing conflicts ───────────────────────────────────────
+        (false, false) => Ok((
+            id.to_string(),
+            worktree_path,
+            BranchAction::Create {
+                from: from_branch.to_string(),
+                name: desired_branch.to_string(),
+            },
+        )),
+
+        // ── Only the branch exists ──────────────────────────────────
+        (false, true) => {
+            let branch_action =
+                resolve_branch_only(id, from_branch, desired_branch, explicit_branch)?;
+            Ok((id.to_string(), worktree_path, branch_action))
+        }
+
+        // ── Only the worktree exists ────────────────────────────────
+        (true, false) => {
+            let (actual_id, actual_path) =
+                resolve_worktree_only(git_root, id)?;
+            Ok((
+                actual_id,
+                actual_path,
+                BranchAction::Create {
+                    from: from_branch.to_string(),
+                    name: desired_branch.to_string(),
+                },
+            ))
+        }
+
+        // ── Both exist ──────────────────────────────────────────────
+        (true, true) => {
+            let (actual_id, actual_path, branch_action) =
+                resolve_both(git_root, id, from_branch, desired_branch, explicit_branch)?;
+            Ok((actual_id, actual_path, branch_action))
+        }
+    }
+}
+
+/// Only the branch exists — ask whether to reuse it or pick a new name.
+fn resolve_branch_only(
+    id: &str,
+    from_branch: &str,
+    desired_branch: &str,
+    explicit_branch: bool,
+) -> Result<BranchAction> {
+    if !explicit_branch {
+        let derived = format!("wip/{id}");
+        if derived != desired_branch
+            && !git::branch_exists(&derived).context("failed to check if branch exists")?
+        {
+            return Ok(BranchAction::Create {
+                from: from_branch.to_string(),
+                name: derived,
+            });
+        }
     }
 
-    match prompt::ask_worktree_conflict(id, branch)? {
+    match prompt::ask_branch_conflict(desired_branch)? {
+        prompt::BranchConflictChoice::Reuse => Ok(BranchAction::Reuse {
+            name: desired_branch.to_string(),
+        }),
+        prompt::BranchConflictChoice::NewName(new_name) => {
+            if git::branch_exists(&new_name).context("failed to check if branch exists")? {
+                bail!(
+                    "branch '{}' also already exists — please pick a unique name",
+                    BOLD_CYAN.paint(&new_name),
+                );
+            }
+            Ok(BranchAction::Create {
+                from: from_branch.to_string(),
+                name: new_name,
+            })
+        }
+        prompt::BranchConflictChoice::Abort => bail!("aborted"),
+    }
+}
+
+/// Only the worktree directory exists — ask whether to open it or pick a new name.
+fn resolve_worktree_only(git_root: &Path, id: &str) -> Result<(String, PathBuf)> {
+    match prompt::ask_worktree_conflict(id)? {
         prompt::WorktreeConflictChoice::OpenExisting => {
             commands::open::run(Some(id.to_string()), None)?;
             std::process::exit(0);
@@ -151,51 +242,45 @@ fn resolve_worktree_id(git_root: &Path, id: &str, branch: &str) -> Result<(Strin
     }
 }
 
-fn resolve_branch(
+/// Both the worktree and branch exist — handle the combined conflict.
+fn resolve_both(
+    git_root: &Path,
     id: &str,
     from_branch: &str,
     desired_branch: &str,
     explicit_branch: bool,
-) -> Result<BranchAction> {
-    if !git::branch_exists(desired_branch).context("failed to check if branch exists")? {
-        return Ok(BranchAction::Create {
-            from: from_branch.to_string(),
-            name: desired_branch.to_string(),
-        });
-    }
-
-    // When the user picked a new worktree name via the conflict prompt and
-    // the branch was auto-derived from the original id, re-derive it from
-    // the new id to avoid a stale conflict.
-    if !explicit_branch {
-        let derived = format!("wip/{id}");
-        if derived != desired_branch
-            && !git::branch_exists(&derived).context("failed to check if branch exists")?
-        {
-            return Ok(BranchAction::Create {
-                from: from_branch.to_string(),
-                name: derived,
-            });
+) -> Result<(String, PathBuf, BranchAction)> {
+    match prompt::ask_both_conflict(id, desired_branch)? {
+        prompt::BothConflictChoice::OpenExisting => {
+            commands::open::run(Some(id.to_string()), None)?;
+            std::process::exit(0);
         }
-    }
-
-    match prompt::ask_branch_conflict(id, desired_branch)? {
-        prompt::BranchConflictChoice::Reuse => Ok(BranchAction::Reuse {
-            name: desired_branch.to_string(),
-        }),
-        prompt::BranchConflictChoice::NewName(new_name) => {
-            if git::branch_exists(&new_name).context("failed to check if branch exists")? {
+        prompt::BothConflictChoice::NewName(new_id) => {
+            let new_path = git::worktree_dir(git_root, &new_id);
+            if new_path.exists() {
                 bail!(
-                    "branch '{}' also already exists — please pick a unique name",
-                    BOLD_CYAN.paint(&new_name),
+                    "worktree '{}' also already exists — please pick a unique name",
+                    BOLD_CYAN.paint(&new_id),
                 );
             }
-            Ok(BranchAction::Create {
-                from: from_branch.to_string(),
-                name: new_name,
-            })
+            let branch_action = if explicit_branch {
+                BranchAction::Reuse {
+                    name: desired_branch.to_string(),
+                }
+            } else {
+                let derived = format!("wip/{new_id}");
+                if git::branch_exists(&derived).context("failed to check if branch exists")? {
+                    resolve_branch_only(&new_id, from_branch, &derived, false)?
+                } else {
+                    BranchAction::Create {
+                        from: from_branch.to_string(),
+                        name: derived,
+                    }
+                }
+            };
+            Ok((new_id, new_path, branch_action))
         }
-        prompt::BranchConflictChoice::Abort => bail!("aborted"),
+        prompt::BothConflictChoice::Abort => bail!("aborted"),
     }
 }
 

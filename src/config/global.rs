@@ -38,7 +38,7 @@ pub enum GlobalConfigError {
     #[error("editor '{0}' not found")]
     EditorNotFound(String),
 
-    #[error("no editors configured — add one with `parai config editors add`")]
+    #[error("no editors configured — add one with `grove config editors add`")]
     NoEditors,
 }
 
@@ -66,7 +66,7 @@ impl GlobalConfig {
             .or_else(|| dirs::home_dir().map(|h| h.join(".config")))
             .ok_or(GlobalConfigError::NoConfigDir)?;
 
-        Ok(config_dir.join("parai").join("config.toml"))
+        Ok(config_dir.join("grove").join("config.toml"))
     }
 
     pub fn load() -> Result<Self, GlobalConfigError> {

@@ -28,12 +28,11 @@ pub enum BranchConflictChoice {
     Abort,
 }
 
-pub fn ask_branch_conflict(id: &str, branch: &str) -> Result<BranchConflictChoice> {
+pub fn ask_branch_conflict(branch: &str) -> Result<BranchConflictChoice> {
     println!(
-        "{} Branch {} already exists (worktree {}).",
+        "{} Branch {} already exists.",
         YELLOW.paint("!"),
         BOLD_CYAN.paint(branch),
-        BOLD_CYAN.paint(id),
     );
 
     let items = vec![
@@ -58,12 +57,11 @@ pub enum WorktreeConflictChoice {
     Abort,
 }
 
-pub fn ask_worktree_conflict(id: &str, branch: &str) -> Result<WorktreeConflictChoice> {
+pub fn ask_worktree_conflict(id: &str) -> Result<WorktreeConflictChoice> {
     println!(
-        "{} Worktree {} already exists (branch {}).",
+        "{} Worktree {} already exists.",
         YELLOW.paint("!"),
         BOLD_CYAN.paint(id),
-        BOLD_CYAN.paint(branch),
     );
 
     let items = vec![
@@ -79,6 +77,36 @@ pub fn ask_worktree_conflict(id: &str, branch: &str) -> Result<WorktreeConflictC
             Ok(WorktreeConflictChoice::NewName(new_name))
         }
         _ => Ok(WorktreeConflictChoice::Abort),
+    }
+}
+
+pub enum BothConflictChoice {
+    OpenExisting,
+    NewName(String),
+    Abort,
+}
+
+pub fn ask_both_conflict(id: &str, branch: &str) -> Result<BothConflictChoice> {
+    println!(
+        "{} Worktree {} and branch {} both already exist.",
+        YELLOW.paint("!"),
+        BOLD_CYAN.paint(id),
+        BOLD_CYAN.paint(branch),
+    );
+
+    let items = vec![
+        SelectItem { id: "o".into(), label: "Open the existing worktree".into(), key: Some('o'), ..Default::default() },
+        SelectItem { id: "n".into(), label: "Create with a new worktree name".into(), key: Some('n'), ..Default::default() },
+        SelectItem { id: "a".into(), label: "Abort".into(), key: Some('a'), ..Default::default() },
+    ];
+
+    match select("Choose:", &items)?.as_str() {
+        "o" => Ok(BothConflictChoice::OpenExisting),
+        "n" => {
+            let new_name = read_line(&format!("{}:", BOLD.paint("New worktree name")))?;
+            Ok(BothConflictChoice::NewName(new_name))
+        }
+        _ => Ok(BothConflictChoice::Abort),
     }
 }
 

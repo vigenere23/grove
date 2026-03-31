@@ -30,7 +30,11 @@ pub fn run(
 
     let id = id.context("worktree id is required (or use --all / --current)")?;
     let git_root = git::repo_root().context("failed to find git repository root")?;
+    let worktrees = git::list_worktrees().context("failed to list worktrees")?;
+    let worktree_paths: Vec<_> = worktrees.iter().map(|wt| wt.path.clone()).collect();
+
     let mut state = RepoState::load(&git_root).context("failed to load state")?;
+    state.prune(&git_root, &worktree_paths);
 
     remove_one(&id, &git_root, &mut state, force, &branch_cleanup)?;
 
@@ -44,13 +48,17 @@ fn run_current(force: bool, branch_cleanup: Option<BranchCleanup>) -> Result<()>
         git::current_worktree_root().context("failed to determine current worktree root")?;
 
     if current_root == git_root {
-        bail!("you are in the main worktree — --current can only be used inside a parai worktree");
+        bail!("you are in the main worktree — --current can only be used inside a grove worktree");
     }
 
     let id = git::worktree_id(&current_root)
         .context("failed to derive worktree id from current directory")?;
 
+    let worktrees = git::list_worktrees().context("failed to list worktrees")?;
+    let worktree_paths: Vec<_> = worktrees.iter().map(|wt| wt.path.clone()).collect();
+
     let mut state = RepoState::load(&git_root).context("failed to load state")?;
+    state.prune(&git_root, &worktree_paths);
     remove_one(&id, &git_root, &mut state, force, &branch_cleanup)?;
     state.save(&git_root).context("failed to save state")?;
 
@@ -59,9 +67,11 @@ fn run_current(force: bool, branch_cleanup: Option<BranchCleanup>) -> Result<()>
 
 fn run_all(force: bool, branch_cleanup: Option<BranchCleanup>) -> Result<()> {
     let git_root = git::repo_root().context("failed to find git repository root")?;
-    let mut state = RepoState::load(&git_root).context("failed to load state")?;
-
     let worktrees = git::list_worktrees().context("failed to list worktrees")?;
+    let worktree_paths: Vec<_> = worktrees.iter().map(|wt| wt.path.clone()).collect();
+
+    let mut state = RepoState::load(&git_root).context("failed to load state")?;
+    state.prune(&git_root, &worktree_paths);
     let ids: Vec<String> = worktrees
         .iter()
         .filter(|wt| wt.path != git_root)

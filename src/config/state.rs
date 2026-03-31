@@ -46,7 +46,7 @@ pub struct RepoState {
     pub worktrees: BTreeMap<String, WorktreeState>,
 }
 
-const STATE_FILENAME: &str = ".parai_state.toml";
+const STATE_FILENAME: &str = ".state.toml";
 
 impl RepoState {
     pub fn path(git_root: &Path) -> PathBuf {
@@ -96,5 +96,26 @@ impl RepoState {
 
     pub fn remove(&mut self, id: &str) {
         self.worktrees.remove(id);
+    }
+
+    /// Remove state entries that don't correspond to any live git worktree.
+    /// `worktree_paths` should be the paths reported by `git worktree list`.
+    /// Returns the ids that were pruned.
+    pub fn prune(&mut self, git_root: &Path, worktree_paths: &[PathBuf]) -> Vec<String> {
+        let stale: Vec<String> = self
+            .worktrees
+            .keys()
+            .filter(|id| {
+                let expected = git::worktree_dir(git_root, id);
+                !worktree_paths.contains(&expected)
+            })
+            .cloned()
+            .collect();
+
+        for id in &stale {
+            self.worktrees.remove(id);
+        }
+
+        stale
     }
 }

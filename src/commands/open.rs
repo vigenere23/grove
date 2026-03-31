@@ -13,23 +13,27 @@ use crate::prompt::{self, SelectItem};
 
 pub fn run(id: Option<String>, workspace_override: Option<String>) -> Result<()> {
     let git_root = git::repo_root().context("failed to find git repository root")?;
+    let worktrees = git::list_worktrees().context("failed to list worktrees")?;
+    let worktree_paths: Vec<_> = worktrees.iter().map(|wt| wt.path.clone()).collect();
+
     let mut state = RepoState::load(&git_root).context("failed to load state")?;
+    let pruned = state.prune(&git_root, &worktree_paths);
+    if !pruned.is_empty() {
+        state.save(&git_root).context("failed to save state")?;
+    }
 
     let id = match id {
         Some(id) => id,
-        None => select_worktree(&git_root)?,
+        None => select_worktree(&git_root, &worktrees, &state)?,
     };
 
-    let worktree_info = git::find_worktree(&git_root, &id)
-        .context("failed to look up worktree")?
+    let worktree_info = worktrees
+        .iter()
+        .find(|wt| {
+            wt.path == git::worktree_dir(&git_root, &id)
+                || (wt.path != git_root && git::worktree_id(&wt.path).as_deref() == Some(&id))
+        })
         .with_context(|| format!("no worktree found with id '{id}'"))?;
-
-    if !worktree_info.path.exists() {
-        bail!(
-            "worktree directory does not exist: {}\nIt may have been removed or pruned.",
-            worktree_info.path.display()
-        );
-    }
 
     let global_config = GlobalConfig::load().context("failed to load global config")?;
 
@@ -118,10 +122,11 @@ fn resolve_editor(
     }
 }
 
-fn select_worktree(git_root: &Path) -> Result<String> {
-    let worktrees = git::list_worktrees().context("failed to list worktrees")?;
-    let state = RepoState::load(git_root).unwrap_or_default();
-
+fn select_worktree(
+    git_root: &Path,
+    worktrees: &[git::WorktreeInfo],
+    state: &RepoState,
+) -> Result<String> {
     let current_root = git::current_worktree_root().ok();
     let is_in_worktree = current_root
         .as_ref()
@@ -164,7 +169,7 @@ fn select_worktree(git_root: &Path) -> Result<String> {
         .collect();
 
     if items.is_empty() {
-        bail!("no worktrees found — create one first with parai new");
+        bail!("no worktrees found — create one first with grove new");
     }
 
     prompt::select("Open worktree:", &items)

@@ -9,7 +9,7 @@ mod prompt;
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
-#[command(name = "parai", about = "Run parallel agents on the same workspace, without conflicts")]
+#[command(name = "grove", about = "Manage parallel workspaces with git worktrees")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -39,7 +39,7 @@ enum Commands {
         /// New branch name to create (default: wip/<id>)
         #[arg(short, long)]
         branch: Option<String>,
-        /// Override the workspace directory (must contain a .parai.toml)
+        /// Override the workspace directory (must contain a .grove.toml)
         #[arg(short, long)]
         workspace: Option<String>,
     },
@@ -47,7 +47,7 @@ enum Commands {
     Open {
         /// Worktree identifier (interactive selection if omitted)
         id: Option<String>,
-        /// Override the workspace directory (must contain a .parai.toml)
+        /// Override the workspace directory (must contain a .grove.toml)
         #[arg(short, long)]
         workspace: Option<String>,
     },

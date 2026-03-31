@@ -10,7 +10,13 @@ use crate::output::*;
 pub fn run(details: bool) -> Result<()> {
     let git_root = git::repo_root().context("failed to find git repository root")?;
     let worktrees = git::list_worktrees().context("failed to list worktrees")?;
-    let state = RepoState::load(&git_root).unwrap_or_default();
+    let worktree_paths: Vec<_> = worktrees.iter().map(|wt| wt.path.clone()).collect();
+
+    let mut state = RepoState::load(&git_root).unwrap_or_default();
+    let pruned = state.prune(&git_root, &worktree_paths);
+    if !pruned.is_empty() {
+        let _ = state.save(&git_root);
+    }
 
     let current_root = git::current_worktree_root().ok();
     let is_in_worktree = current_root

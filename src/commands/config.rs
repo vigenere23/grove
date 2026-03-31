@@ -59,7 +59,7 @@ pub fn list_editors() -> Result<()> {
         println!("{}", DIM.paint("No editors configured."));
         println!(
             "Add one with: {}",
-            BOLD.paint("parai config editors add <id> --name <name> --command <command>")
+            BOLD.paint("grove config editors add <id> --name <name> --command <command>")
         );
         return Ok(());
     }

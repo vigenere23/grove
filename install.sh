@@ -2,10 +2,10 @@
 set -euo pipefail
 
 INSTALL_DIR="$HOME/.local/bin"
-BINARY_NAME="parai"
+BINARY_NAME="grove"
 PROFILE="${1:-debug}"
 
-echo "Building parai with profile '$PROFILE'..."
+echo "Building grove with profile '$PROFILE'..."
 case "$PROFILE" in
     release) cargo build --release ;;
     debug)   cargo build ;;
@@ -26,7 +26,7 @@ echo "Symlinked $INSTALL_DIR/$BINARY_NAME -> $BINARY_PATH"
 
 case ":$PATH:" in
     *":$INSTALL_DIR:"*)
-        echo "Done. Run 'parai --help' to get started."
+        echo "Done. Run 'grove --help' to get started."
         ;;
     *)
         echo ""

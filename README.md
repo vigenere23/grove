@@ -1,8 +1,8 @@
-# parai
+# grove
 
-Run parallel AI agents on the same project, without conflicts.
+Manage parallel workspaces with git worktrees.
 
-`parai` uses [git worktrees](https://git-scm.com/docs/git-worktree) to give each agent its own isolated copy of the repository, then opens your configured editor in the right directory — all in a single command.
+`grove` uses [git worktrees](https://git-scm.com/docs/git-worktree) to give each workspace its own isolated copy of the repository, then opens your configured editor in the right directory — all in a single command.
 
 ## Requirements
 
@@ -19,25 +19,25 @@ Coming soon.
 
 ```bash
 # 1. Register an editor
-parai config editors add code --name "VSCode" --command "code \$workspace"
+grove config editors add code --name "VSCode" --command "code \$workspace"
 
-# 2. (Optional) Add a workspace config so parai knows which editor to use
+# 2. (Optional) Add a workspace config so grove knows which editor to use
 #    and which subdirectory to open. Place this anywhere between your
 #    current directory and the git root.
-echo 'editor = "code"' > .parai.toml
+echo 'editor = "code"' > .grove.toml
 
 # 3. Spin up a worktree and open the editor
-parai new my-feature --from main
+grove new my-feature --from main
 
 # 4. When you're done, remove the worktree
-parai rm my-feature
+grove rm my-feature
 ```
 
-This creates a worktree at `<git-root>/../.<repo>_worktrees/my-feature` on a new branch `wip/my-feature`, then opens VSCode pointing at the correct subdirectory.
+This creates a worktree at `<git-root>/../.grove__<repo>/my-feature` on a new branch `wip/my-feature`, then opens VSCode pointing at the correct subdirectory.
 
 ## Configuration
 
-### Global config — `~/.config/parai/config.toml`
+### Global config — `~/.config/grove/config.toml`
 
 Stores editor definitions. Created automatically on first use. Respects `$XDG_CONFIG_HOME` if set (defaults to `~/.config`).
 
@@ -55,17 +55,17 @@ command = "cursor $workspace"
 
 The `$workspace` placeholder is replaced with the resolved workspace path at launch time.
 
-### Workspace config — `.parai.toml`
+### Workspace config — `.grove.toml`
 
-Place a `.parai.toml` file in any directory within a git repository to control which editor is used and which subdirectory is opened in the worktree.
+Place a `.grove.toml` file in any directory within a git repository to control which editor is used and which subdirectory is opened in the worktree.
 
 ```toml
 editor = "code"
 ```
 
-When multiple `.parai.toml` files exist between your current directory and the git root, the most specific one (closest to your current directory) takes priority.
+When multiple `.grove.toml` files exist between your current directory and the git root, the most specific one (closest to your current directory) takes priority.
 
-If no `.parai.toml` is found, `parai` falls back to the first editor defined in the global config.
+If no `.grove.toml` is found, `grove` falls back to the first editor defined in the global config.
 
 ## Command reference
 
@@ -85,7 +85,7 @@ src/
   config/
     global.rs          Global config (load, save, editor CRUD)
     state.rs           Per-repo worktree state tracking
-    workspace.rs       Workspace config (hierarchical .parai.toml lookup)
+    workspace.rs       Workspace config (hierarchical .grove.toml lookup)
   git.rs               Git operations (repo root, branch, worktree)
   editor.rs            Editor command expansion and process spawn
 ```
@@ -99,11 +99,11 @@ src/
 ### Build and install locally
 
 ```bash
-git clone <repo-url> && cd parai
+git clone <repo-url> && cd grove
 ./install.sh
 ```
 
-This builds a release binary and symlinks it to `~/.local/bin/parai`. The script warns you if `~/.local/bin` is not in your `PATH`.
+This builds a release binary and symlinks it to `~/.local/bin/grove`. The script warns you if `~/.local/bin` is not in your `PATH`.
 
 ### Build only
 
@@ -111,7 +111,7 @@ This builds a release binary and symlinks it to `~/.local/bin/parai`. The script
 cargo build --release
 ```
 
-The binary is produced at `target/release/parai`.
+The binary is produced at `target/release/grove`.
 
 ### Run without installing
 
