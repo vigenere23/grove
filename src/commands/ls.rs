@@ -124,20 +124,24 @@ fn print_worktree(
         BOLD.paint(&id_display)
     };
 
-    println!("{current_marker}{id_styled}{status}{tracked_marker}");
+    let branch_display = match &wt.branch {
+        Some(b) => b.as_str(),
+        None if wt.is_bare => "(bare)",
+        None => "(detached)",
+    };
 
     if details {
-        let branch_display = match &wt.branch {
-            Some(b) => b.as_str(),
-            None if wt.is_bare => "(bare)",
-            None => "(detached)",
-        };
-
+        println!("{current_marker}{id_styled}{status}{tracked_marker}");
         println!("    {}   {}", DIM.paint("path:"), wt.path.display());
         println!("    {} {}", DIM.paint("branch:"), CYAN.paint(branch_display));
 
         if let Some((_, ws)) = state_lookup {
             println!("    workspace: {}", ws.workspace.display());
         }
+    } else {
+        println!(
+            "{current_marker}{id_styled}{status}{tracked_marker}  {}",
+            DIM.paint(branch_display),
+        );
     }
 }

@@ -7,6 +7,7 @@ use crate::config::state::RepoState;
 use crate::git;
 use crate::output::*;
 use crate::output::verbose;
+use crate::prompt::{self, SelectItem};
 use crate::BranchCleanup;
 
 pub fn run(
@@ -38,6 +39,7 @@ pub fn run(
     let mut state = RepoState::load(&git_root).context("failed to load state")?;
     state.prune(&git_root, &worktree_paths);
 
+    let branch_cleanup = resolve_branch_cleanup(branch_cleanup)?;
     remove_one(&id, &git_root, &mut state, force, &branch_cleanup)?;
 
     state.save(&git_root).context("failed to save state")?;
@@ -56,8 +58,6 @@ fn run_current(force: bool, branch_cleanup: Option<BranchCleanup>) -> Result<()>
     let id = git::worktree_id(&current_root)
         .context("failed to derive worktree id from current directory")?;
 
-    // Move CWD out of the worktree so the directory can actually be deleted.
-    // On Unix the kernel keeps a directory alive while any process has it as CWD.
     env::set_current_dir(&git_root).context("failed to change directory to repo root")?;
 
     let worktrees = git::list_worktrees().context("failed to list worktrees")?;
@@ -65,10 +65,44 @@ fn run_current(force: bool, branch_cleanup: Option<BranchCleanup>) -> Result<()>
 
     let mut state = RepoState::load(&git_root).context("failed to load state")?;
     state.prune(&git_root, &worktree_paths);
+    let branch_cleanup = resolve_branch_cleanup(branch_cleanup)?;
     remove_one(&id, &git_root, &mut state, force, &branch_cleanup)?;
     state.save(&git_root).context("failed to save state")?;
 
     Ok(())
+}
+
+fn resolve_branch_cleanup(explicit: Option<BranchCleanup>) -> Result<Option<BranchCleanup>> {
+    if explicit.is_some() {
+        return Ok(explicit);
+    }
+
+    let items = vec![
+        SelectItem {
+            id: "keep".into(),
+            label: "Keep the branch".into(),
+            key: Some('k'),
+            ..Default::default()
+        },
+        SelectItem {
+            id: "delete".into(),
+            label: "Delete the local branch".into(),
+            key: Some('d'),
+            ..Default::default()
+        },
+        SelectItem {
+            id: "delete-remote".into(),
+            label: "Delete local and remote branches".into(),
+            key: Some('r'),
+            ..Default::default()
+        },
+    ];
+
+    match prompt::select("Branch cleanup:", &items)?.as_str() {
+        "delete" => Ok(Some(BranchCleanup::Delete)),
+        "delete-remote" => Ok(Some(BranchCleanup::DeleteRemote)),
+        _ => Ok(None),
+    }
 }
 
 fn run_all(force: bool, branch_cleanup: Option<BranchCleanup>) -> Result<()> {
