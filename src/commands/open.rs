@@ -41,7 +41,8 @@ pub fn run(id: Option<String>, workspace_override: Option<String>) -> Result<()>
     let global_config = GlobalConfig::load().context("failed to load global config")?;
 
     let (editor_id, relative_workspace) = if let Some(ref ws) = workspace_override {
-        let ws_path = git_root.join(ws);
+        let cwd = env::current_dir().context("failed to determine current working directory")?;
+        let ws_path = cwd.join(ws);
         let resolved = workspace::load_workspace_config(&ws_path)
             .with_context(|| format!("failed to load workspace config from '{ws}'"))?;
         let editor_id = resolved.config.editor;

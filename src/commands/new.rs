@@ -32,9 +32,12 @@ pub fn run(
     let global_config = GlobalConfig::load().context("failed to load global config")?;
     verbose!("global include: {:?}", global_config.include);
 
+    let cwd = env::current_dir().context("failed to determine current working directory")?;
+    verbose!("cwd: {}", cwd.display());
+
     let (editor_id, workspace_dir, workspace_include) =
         if let Some(ref ws) = workspace_override {
-            let ws_path = git_root.join(ws);
+            let ws_path = cwd.join(ws);
             verbose!("workspace override: {}", ws_path.display());
             let resolved = workspace::load_workspace_config(&ws_path)
                 .with_context(|| format!("failed to load workspace config from '{ws}'"))?;
@@ -44,9 +47,6 @@ pub fn run(
             verbose!("workspace config editor={}, include={:?}, config_dir={}", editor_id, inc, resolved.config_dir.display());
             (editor_id, resolved.config_dir, inc)
         } else {
-            let cwd =
-                env::current_dir().context("failed to determine current working directory")?;
-            verbose!("cwd: {}", cwd.display());
             match workspace::find_workspace_config(&cwd, &git_root)
                 .context("failed to read workspace config")?
             {
@@ -58,9 +58,13 @@ pub fn run(
                     (editor_id, resolved.config_dir, inc)
                 }
                 None => {
-                    let (first_id, _) = global_config.first_editor()?;
-                    verbose!("no workspace config found, using first editor: {}", first_id);
-                    (first_id.clone(), git_root.clone(), Vec::new())
+                    bail!(
+                        "no .grove.toml found between {} and git root {}\n\
+                         Create one with: echo 'editor = \"<ID>\"' > .grove.toml\n\
+                         Or use -w/--workspace to specify a directory containing one",
+                        cwd.display(),
+                        git_root.display(),
+                    );
                 }
             }
         };

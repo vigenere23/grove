@@ -88,7 +88,7 @@ Create a git worktree and open the configured editor.
 3. **Resolves the editor:**
    - Walks from the current directory up to the git root looking for `.grove.toml` files.
    - Uses the `editor` field from the most specific (closest) config found.
-   - If no `.grove.toml` exists, falls back to the first editor in the global config.
+   - If no `.grove.toml` exists, returns an error.
 4. **Opens the editor** at `<worktree-path>/<workspace-path>`, where `<workspace-path>` is the relative path from the git root to the directory containing the selected `.grove.toml`.
 
 ### Example
@@ -122,7 +122,7 @@ Result:
 | Worktree directory already exists                  | `worktree already exists at <path>`                                     |
 | Git worktree command fails                         | `git command failed: <git stderr>`                                      |
 | `.grove.toml` references an unknown editor ID      | `editor '<ID>' not found`                                               |
-| No `.grove.toml` found and no editors in global config | `no editors configured — add one with grove config editors add`     |
+| No `.grove.toml` found between cwd and git root        | `no .grove.toml found between <cwd> and git root <root>`           |
 | Editor command is empty                            | `editor command is empty`                                               |
 | Editor binary cannot be executed                   | `failed to launch editor '<command>': <OS error>`                       |
 

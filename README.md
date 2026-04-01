@@ -21,7 +21,7 @@ Coming soon.
 # 1. Register an editor
 grove config editors add code --name "VSCode" --command "code \$workspace"
 
-# 2. (Optional) Add a workspace config so grove knows which editor to use
+# 2. Add a workspace config so grove knows which editor to use
 #    and which subdirectory to open. Place this anywhere between your
 #    current directory and the git root.
 echo 'editor = "code"' > .grove.toml
@@ -65,7 +65,7 @@ editor = "code"
 
 When multiple `.grove.toml` files exist between your current directory and the git root, the most specific one (closest to your current directory) takes priority.
 
-If no `.grove.toml` is found, `grove` falls back to the first editor defined in the global config.
+A `.grove.toml` is required when creating a new worktree. If none is found between your current directory and the git root, `grove new` will return an error.
 
 ## Command reference
 
