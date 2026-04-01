@@ -213,7 +213,7 @@ Remove a worktree and clean up state.
 
 If the worktree directory is already gone (e.g. manually deleted), the state entry is cleaned up silently.
 
-With `--all`, all tracked worktrees are removed. Errors on individual worktrees are collected and reported at the end; successful removals still take effect.
+With `--all`, only clean worktrees are removed; dirty worktrees are skipped (printed with a "skipped (dirty)" notice). Use `--force` to include dirty worktrees. Errors on individual worktrees are collected and reported at the end; successful removals still take effect.
 
 ### Examples
 

@@ -72,6 +72,11 @@ pub fn try_complete_subcommand() -> bool {
     }
     let subcmd = &cmd_args[1];
     let current = &cmd_args[cmd_args.len() - 1];
+    let prev = &cmd_args[cmd_args.len() - 2];
+
+    if prev == "--workspace" || prev == "-w" {
+        return false;
+    }
 
     match subcmd.as_str() {
         "rm" | "remove" => {

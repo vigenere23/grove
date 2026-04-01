@@ -143,7 +143,7 @@ pub fn list_worktrees() -> Result<Vec<WorktreeInfo>, GitError> {
 
 pub fn is_dirty(worktree_path: &Path) -> Result<bool, GitError> {
     let output = Command::new("git")
-        .args(["status", "--porcelain"])
+        .args(["status", "--porcelain", "--no-untracked-files"])
         .current_dir(worktree_path)
         .output()
         .map_err(GitError::Io)?;
@@ -273,8 +273,12 @@ pub fn add_worktree_existing_branch(
 }
 
 pub fn remove_worktree(worktree_path: &Path, force: bool) -> Result<(), GitError> {
-    let mut args = vec!["worktree", "remove"];
+    // Always use --force so `git worktree remove` doesn't refuse due to
+    // untracked files (e.g. files copied via `include`). The caller is
+    // responsible for the uncommitted-changes safety check.
+    let mut args = vec!["worktree", "remove", "--force"];
     if force {
+        // Double --force: also removes worktrees with staged/unstaged changes.
         args.push("--force");
     }
     let path_str = worktree_path.to_string_lossy();
@@ -288,16 +292,6 @@ pub fn remove_worktree(worktree_path: &Path, force: bool) -> Result<(), GitError
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(GitError::CommandFailed(stderr));
-    }
-
-    // git worktree remove leaves the directory behind when untracked files
-    // exist (e.g. files copied via `include`). Clean up the leftovers.
-    if worktree_path.exists() {
-        std::fs::remove_dir_all(worktree_path).map_err(|e| {
-            GitError::CommandFailed(format!(
-                "worktree removed from git but failed to delete leftover directory: {e}"
-            ))
-        })?;
     }
 
     Ok(())

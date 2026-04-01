@@ -112,31 +112,63 @@ fn run_all(force: bool, branch_cleanup: Option<BranchCleanup>) -> Result<()> {
 
     let mut state = RepoState::load(&git_root).context("failed to load state")?;
     state.prune(&git_root, &worktree_paths);
-    let ids: Vec<String> = worktrees
+
+    let candidates: Vec<(String, PathBuf)> = worktrees
         .iter()
         .filter(|wt| wt.path != git_root)
-        .filter_map(|wt| git::worktree_id(&wt.path))
+        .filter_map(|wt| git::worktree_id(&wt.path).map(|id| (id, wt.path.clone())))
         .collect();
 
-    if ids.is_empty() {
+    if candidates.is_empty() {
         println!("{}", DIM.paint("No worktrees to remove."));
         return Ok(());
     }
 
-    let mut errors = Vec::new();
+    let mut ids = Vec::new();
+    let mut skipped = Vec::new();
+    for (id, path) in &candidates {
+        if !force {
+            let dirty = git::is_dirty(path).unwrap_or(false);
+            if dirty {
+                skipped.push(id.as_str());
+                continue;
+            }
+        }
+        ids.push(id.as_str());
+    }
+
+    if ids.is_empty() && !skipped.is_empty() {
+        println!("{}", DIM.paint("No clean worktrees to remove."));
+        for id in &skipped {
+            println!(
+                "{} {}",
+                BOLD.paint(*id),
+                YELLOW.paint("skipped (dirty)")
+            );
+        }
+        return Ok(());
+    }
+
+    let mut failed = 0usize;
     for id in &ids {
         if let Err(e) = remove_one(id, &git_root, &mut state, force, &branch_cleanup) {
-            errors.push(format!("{id}: {e}"));
+            eprintln!("{} {} {e}", BOLD.paint(*id), RED.paint("✘"));
+            failed += 1;
         }
+    }
+
+    for id in &skipped {
+        println!(
+            "{} {}",
+            BOLD.paint(*id),
+            YELLOW.paint("skipped (dirty)")
+        );
     }
 
     state.save(&git_root).context("failed to save state")?;
 
-    if !errors.is_empty() {
-        bail!(
-            "failed to remove some worktrees:\n{}",
-            errors.join("\n")
-        );
+    if failed > 0 {
+        bail!("failed to remove {failed} worktree(s)");
     }
 
     Ok(())

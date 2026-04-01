@@ -7,7 +7,7 @@ mod include;
 mod output;
 mod prompt;
 
-use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap::{builder::ValueHint, CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::env::CompleteEnv;
 
 #[derive(Parser)]
@@ -45,7 +45,7 @@ enum Commands {
         #[arg(short, long)]
         branch: Option<String>,
         /// Override the workspace directory (must contain a .grove.toml)
-        #[arg(short, long)]
+        #[arg(short, long, value_hint = ValueHint::DirPath)]
         workspace: Option<String>,
     },
     /// Reopen an existing worktree in the editor
@@ -53,7 +53,7 @@ enum Commands {
         /// Worktree identifier (interactive selection if omitted)
         id: Option<String>,
         /// Override the workspace directory (must contain a .grove.toml)
-        #[arg(short, long)]
+        #[arg(short, long, value_hint = ValueHint::DirPath)]
         workspace: Option<String>,
     },
     /// Remove a worktree
