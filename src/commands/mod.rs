@@ -1,5 +1,5 @@
 pub mod config;
-pub mod ls;
-pub mod new;
+pub mod create;
+pub mod list;
 pub mod open;
-pub mod rm;
+pub mod remove;

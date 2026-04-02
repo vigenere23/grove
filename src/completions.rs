@@ -79,11 +79,11 @@ pub fn try_complete_subcommand() -> bool {
     }
 
     match subcmd.as_str() {
-        "rm" | "remove" => {
+        "cut" | "rm" | "remove" => {
             complete_rm(current);
             true
         }
-        "open" => {
+        "tend" | "open" => {
             complete_open(current);
             true
         }
@@ -94,7 +94,7 @@ pub fn try_complete_subcommand() -> bool {
 /// Completion order: --current, worktrees (newest first), --all.
 /// When typing a `-` prefix, show all flags.
 fn complete_rm(current: &str) {
-    let flags = get_flags("rm");
+    let flags = get_flags("cut");
 
     let mut lines: Vec<(String, String)> = Vec::new();
 

@@ -67,10 +67,12 @@ Remove an editor from the global config.
 
 ---
 
-## `grove new`
+## `grove plant`
+
+**Aliases:** `grove new`, `grove create`
 
 ```
-grove new <ID> [--from <BRANCH>] [--branch <BRANCH>]
+grove plant <ID> [--from <BRANCH>] [--branch <BRANCH>]
 ```
 
 Create a git worktree and open the configured editor.
@@ -105,7 +107,7 @@ Given this layout:
 Running from `/home/project/moduleA`:
 
 ```bash
-grove new featureX --from main --branch feat/test-123/new-command
+grove plant featureX --from main --branch feat/test-123/new-command
 ```
 
 Result:
@@ -128,10 +130,12 @@ Result:
 
 ---
 
-## `grove open`
+## `grove tend`
+
+**Alias:** `grove open`
 
 ```
-grove open [ID]
+grove tend [ID]
 ```
 
 Reopen an existing worktree in the configured editor.
@@ -158,9 +162,9 @@ Reopen an existing worktree in the configured editor.
 
 ---
 
-## `grove ls`
+## `grove trees`
 
-**Alias:** `grove list`
+**Aliases:** `grove ls`, `grove list`
 
 List all worktrees and their status.
 
@@ -178,13 +182,13 @@ The current worktree (if you're inside one) is marked with `*` and listed first.
 
 ---
 
-## `grove rm`
+## `grove cut`
 
-**Alias:** `grove remove`
+**Aliases:** `grove rm`, `grove remove`
 
 ```
-grove rm <ID> [--force] [--branch <MODE>]
-grove rm --all [--force] [--branch <MODE>]
+grove cut <ID> [--force] [--branch <MODE>]
+grove cut --all [--force] [--branch <MODE>]
 ```
 
 Remove a worktree and clean up state.
@@ -219,22 +223,22 @@ With `--all`, only clean worktrees are removed; dirty worktrees are skipped (pri
 
 ```bash
 # Remove a clean worktree
-grove rm my-feature
+grove cut my-feature
 
 # Force-remove a dirty worktree
-grove rm my-feature --force
+grove cut my-feature --force
 
 # Remove and delete the local branch
-grove rm my-feature --branch delete
+grove cut my-feature --branch delete
 
 # Remove and delete both local and remote branches
-grove rm my-feature --branch delete-remote
+grove cut my-feature --branch delete-remote
 
 # Remove all worktrees
-grove rm --all
+grove cut --all
 
 # Force-remove all worktrees and delete all branches
-grove rm --all --force --branch delete
+grove cut --all --force --branch delete
 ```
 
 ### Errors

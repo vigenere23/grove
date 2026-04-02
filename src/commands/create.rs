@@ -9,7 +9,7 @@ use crate::config::state::{RepoState, WorktreeState};
 use crate::config::workspace;
 use crate::editor;
 use crate::git;
-use crate::include;
+use crate::copy;
 use crate::output::*;
 use crate::prompt;
 
@@ -30,12 +30,12 @@ pub fn run(
     verbose!("git root: {}", git_root.display());
 
     let global_config = GlobalConfig::load().context("failed to load global config")?;
-    verbose!("global include: {:?}", global_config.include);
+    verbose!("global copy: {:?}", global_config.copy);
 
     let cwd = env::current_dir().context("failed to determine current working directory")?;
     verbose!("cwd: {}", cwd.display());
 
-    let (editor_id, workspace_dir, workspace_include) =
+    let (editor_id, workspace_dir, workspace_copy) =
         if let Some(ref ws) = workspace_override {
             let ws_path = cwd.join(ws);
             verbose!("workspace override: {}", ws_path.display());
@@ -43,8 +43,8 @@ pub fn run(
                 .with_context(|| format!("failed to load workspace config from '{ws}'"))?;
             let editor_id = resolved.config.editor;
             global_config.get_editor(&editor_id)?;
-            let inc = resolved.config.include;
-            verbose!("workspace config editor={}, include={:?}, config_dir={}", editor_id, inc, resolved.config_dir.display());
+            let inc = resolved.config.copy;
+            verbose!("workspace config editor={}, copy={:?}, config_dir={}", editor_id, inc, resolved.config_dir.display());
             (editor_id, resolved.config_dir, inc)
         } else {
             match workspace::find_workspace_config(&cwd, &git_root)
@@ -53,8 +53,8 @@ pub fn run(
                 Some(resolved) => {
                     let editor_id = resolved.config.editor;
                     global_config.get_editor(&editor_id)?;
-                    let inc = resolved.config.include;
-                    verbose!("workspace config found: editor={}, include={:?}, config_dir={}", editor_id, inc, resolved.config_dir.display());
+                    let inc = resolved.config.copy;
+                    verbose!("workspace config found: editor={}, copy={:?}, config_dir={}", editor_id, inc, resolved.config_dir.display());
                     (editor_id, resolved.config_dir, inc)
                 }
                 None => {
@@ -103,16 +103,16 @@ pub fn run(
     let editor_workspace = worktree_path.join(relative_workspace);
     verbose!("editor_workspace (dest): {}", editor_workspace.display());
 
-    let mut include_paths = global_config.resolved_include(&editor_id);
-    verbose!("resolved include (global+editor): {:?}", include_paths);
-    for path in workspace_include {
-        if !include_paths.contains(&path) {
-            include_paths.push(path);
+    let mut copy_paths = global_config.resolved_copy(&editor_id);
+    verbose!("resolved copy (global+editor): {:?}", copy_paths);
+    for path in workspace_copy {
+        if !copy_paths.contains(&path) {
+            copy_paths.push(path);
         }
     }
-    verbose!("final include paths: {:?}", include_paths);
+    verbose!("final copy paths: {:?}", copy_paths);
 
-    let copied = include::copy_includes(&workspace_dir, &editor_workspace, &include_paths);
+    let copied = copy::copy_paths(&workspace_dir, &editor_workspace, &copy_paths);
 
     let editor_cfg = global_config.get_editor(&editor_id)?;
     verbose!("opening editor '{}' with command: {}", editor_id, editor_cfg.command);

@@ -46,11 +46,11 @@ pub fn edit() -> Result<()> {
 pub fn list_editors() -> Result<()> {
     let config = GlobalConfig::load().context("failed to load global config")?;
 
-    if !config.include.is_empty() {
+    if !config.copy.is_empty() {
         println!(
             "{} {}",
-            DIM.paint("include:"),
-            config.include.join(", "),
+            DIM.paint("copy:"),
+            config.copy.join(", "),
         );
         println!();
     }
@@ -68,17 +68,17 @@ pub fn list_editors() -> Result<()> {
         println!("{}:", BOLD_CYAN.paint(id));
         println!("  {}    {}", DIM.paint("name:"), editor.name);
         println!("  {} {}", DIM.paint("command:"), editor.command);
-        if !editor.include.is_empty() {
-            println!("  {} {}", DIM.paint("include:"), editor.include.join(", "));
+        if !editor.copy.is_empty() {
+            println!("  {} {}", DIM.paint("copy:"), editor.copy.join(", "));
         }
     }
 
     Ok(())
 }
 
-pub fn add_editor(id: String, name: String, command: String, include: Vec<String>) -> Result<()> {
+pub fn add_editor(id: String, name: String, command: String, copy: Vec<String>) -> Result<()> {
     let mut config = GlobalConfig::load().context("failed to load global config")?;
-    config.add_editor(id.clone(), name, command, include)?;
+    config.add_editor(id.clone(), name, command, copy)?;
     config.save().context("failed to save global config")?;
     println!("{} Editor {} added", GREEN.paint("✔"), BOLD_CYAN.paint(&id));
     Ok(())

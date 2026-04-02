@@ -47,13 +47,13 @@ pub struct EditorConfig {
     pub name: String,
     pub command: String,
     #[serde(default)]
-    pub include: Vec<String>,
+    pub copy: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GlobalConfig {
     #[serde(default)]
-    pub include: Vec<String>,
+    pub copy: Vec<String>,
     #[serde(default)]
     pub editors: BTreeMap<String, EditorConfig>,
 }
@@ -105,14 +105,14 @@ impl GlobalConfig {
         id: String,
         name: String,
         command: String,
-        include: Vec<String>,
+        copy: Vec<String>,
     ) -> Result<(), GlobalConfigError> {
         if self.editors.contains_key(&id) {
             return Err(GlobalConfigError::EditorAlreadyExists(id));
         }
 
         self.editors
-            .insert(id, EditorConfig { name, command, include });
+            .insert(id, EditorConfig { name, command, copy });
         Ok(())
     }
 
@@ -136,19 +136,19 @@ impl GlobalConfig {
             .ok_or(GlobalConfigError::NoEditors)
     }
 
-    /// Merge global-level `include` with editor-specific `include`, deduplicating.
-    pub fn resolved_include(&self, editor_id: &str) -> Vec<String> {
+    /// Merge global-level `copy` with editor-specific `copy`, deduplicating.
+    pub fn resolved_copy(&self, editor_id: &str) -> Vec<String> {
         let mut seen = std::collections::HashSet::new();
         let mut result = Vec::new();
 
-        for path in &self.include {
+        for path in &self.copy {
             if seen.insert(path.clone()) {
                 result.push(path.clone());
             }
         }
 
         if let Some(editor) = self.editors.get(editor_id) {
-            for path in &editor.include {
+            for path in &editor.copy {
                 if seen.insert(path.clone()) {
                     result.push(path.clone());
                 }

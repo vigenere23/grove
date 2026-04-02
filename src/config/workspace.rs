@@ -26,7 +26,7 @@ pub enum WorkspaceConfigError {
 pub struct WorkspaceConfig {
     pub editor: String,
     #[serde(default)]
-    pub include: Vec<String>,
+    pub copy: Vec<String>,
 }
 
 pub struct ResolvedWorkspace {

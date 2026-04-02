@@ -274,7 +274,7 @@ pub fn add_worktree_existing_branch(
 
 pub fn remove_worktree(worktree_path: &Path, force: bool) -> Result<(), GitError> {
     // Always use --force so `git worktree remove` doesn't refuse due to
-    // untracked files (e.g. files copied via `include`). The caller is
+    // untracked files (e.g. files copied via `copy`). The caller is
     // responsible for the uncommitted-changes safety check.
     let mut args = vec!["worktree", "remove", "--force"];
     if force {

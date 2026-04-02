@@ -3,7 +3,7 @@ mod completions;
 mod config;
 mod editor;
 mod git;
-mod include;
+mod copy;
 mod output;
 mod prompt;
 
@@ -27,38 +27,9 @@ enum Commands {
         #[command(subcommand)]
         command: ConfigCommands,
     },
-    /// List all worktrees and their status
-    #[command(alias = "list")]
-    Ls {
-        /// Show full details for each worktree
-        #[arg(long)]
-        details: bool,
-    },
-    /// Create a worktree and open an editor
-    New {
-        /// Worktree identifier
-        id: String,
-        /// Base branch to create the worktree from (default: current branch)
-        #[arg(long)]
-        from: Option<String>,
-        /// New branch name to create (default: wip/<id>)
-        #[arg(short, long)]
-        branch: Option<String>,
-        /// Override the workspace directory (must contain a .grove.toml)
-        #[arg(short, long, value_hint = ValueHint::DirPath)]
-        workspace: Option<String>,
-    },
-    /// Reopen an existing worktree in the editor
-    Open {
-        /// Worktree identifier (interactive selection if omitted)
-        id: Option<String>,
-        /// Override the workspace directory (must contain a .grove.toml)
-        #[arg(short, long, value_hint = ValueHint::DirPath)]
-        workspace: Option<String>,
-    },
     /// Remove a worktree
-    #[command(alias = "remove")]
-    Rm {
+    #[command(visible_alias = "rm", visible_alias = "remove")]
+    Cut {
         /// Worktree identifier (omit when using --all or --current)
         id: Option<String>,
         /// Remove even if the worktree has uncommitted changes
@@ -73,6 +44,37 @@ enum Commands {
         /// What to do with the branch after removal
         #[arg(long, value_enum)]
         branch: Option<BranchCleanup>,
+    },
+    /// Create a worktree and open an editor
+    #[command(visible_alias = "new", visible_alias = "create")]
+    Plant {
+        /// Worktree identifier
+        id: String,
+        /// Base branch to create the worktree from (default: current branch)
+        #[arg(long)]
+        from: Option<String>,
+        /// New branch name to create (default: wip/<id>)
+        #[arg(short, long)]
+        branch: Option<String>,
+        /// Override the workspace directory (must contain a .grove.toml)
+        #[arg(short, long, value_hint = ValueHint::DirPath)]
+        workspace: Option<String>,
+    },
+    /// Reopen an existing worktree in the editor
+    #[command(visible_alias = "open")]
+    Tend {
+        /// Worktree identifier (interactive selection if omitted)
+        id: Option<String>,
+        /// Override the workspace directory (must contain a .grove.toml)
+        #[arg(short, long, value_hint = ValueHint::DirPath)]
+        workspace: Option<String>,
+    },
+    /// List all worktrees and their status
+    #[command(visible_alias = "ls", visible_alias = "list")]
+    Trees {
+        /// Show full details for each worktree
+        #[arg(long)]
+        details: bool,
     },
 }
 
@@ -111,7 +113,7 @@ enum EditorCommands {
         command: String,
         /// Paths to copy into new worktrees when using this editor (repeatable)
         #[arg(long)]
-        include: Vec<String>,
+        copy: Vec<String>,
     },
     /// Remove an editor
     Remove {
@@ -151,23 +153,23 @@ fn main() -> anyhow::Result<()> {
             ConfigCommands::Edit => commands::config::edit(),
             ConfigCommands::Editors { command } => match command {
                 EditorCommands::List => commands::config::list_editors(),
-                EditorCommands::Add { id, name, command, include } => {
-                    commands::config::add_editor(id, name, command, include)
+                EditorCommands::Add { id, name, command, copy } => {
+                    commands::config::add_editor(id, name, command, copy)
                 }
                 EditorCommands::Remove { id } => commands::config::remove_editor(id),
             },
         },
-        Commands::Ls { details } => commands::ls::run(details),
-        Commands::New { id, from, branch, workspace } => {
-            commands::new::run(id, from, branch, workspace)
-        }
-        Commands::Open { id, workspace } => commands::open::run(id, workspace),
-        Commands::Rm {
+        Commands::Cut {
             id,
             force,
             all,
             current,
             branch,
-        } => commands::rm::run(id, force, all, current, branch),
+        } => commands::remove::run(id, force, all, current, branch),
+        Commands::Plant { id, from, branch, workspace } => {
+            commands::create::run(id, from, branch, workspace)
+        }
+        Commands::Tend { id, workspace } => commands::open::run(id, workspace),
+        Commands::Trees { details } => commands::list::run(details),
     }
 }

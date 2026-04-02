@@ -27,13 +27,13 @@ grove config editors add code --name "VSCode" --command "code \$workspace"
 echo 'editor = "code"' > .grove.toml
 
 # 3. Spin up a worktree and open the editor
-grove new my-feature --from main
+grove plant my-feature --from main
 
 # 4. When you're done, remove the worktree
-grove rm my-feature
+grove cut my-feature
 ```
 
-This creates a worktree at `<git-root>/../.grove__<repo>/my-feature` on a new branch `wip/my-feature`, then opens VSCode pointing at the correct subdirectory.
+This creates a worktree at `<git-root>/../.grove__<repo>/my-feature` on a new branch `wip/my-feature`, then opens VSCode pointing at the correct subdirectory. You can also use `grove new` or `grove create` as aliases for `grove plant`, and `grove rm` or `grove remove` for `grove cut`.
 
 ## Configuration
 
@@ -65,34 +65,15 @@ editor = "code"
 
 When multiple `.grove.toml` files exist between your current directory and the git root, the most specific one (closest to your current directory) takes priority.
 
-A `.grove.toml` is required when creating a new worktree. If none is found between your current directory and the git root, `grove new` will return an error.
+A `.grove.toml` is required when creating a new worktree. If none is found between your current directory and the git root, `grove plant` will return an error.
 
 ## Command reference
 
 See [docs/commands.md](docs/commands.md) for the full command reference.
 
-## Project structure
-
-```
-src/
-  main.rs              Entry point and CLI definition (clap)
-  commands/
-    config.rs          Editor config management (list, add, remove)
-    new.rs             Worktree creation and editor launch
-    open.rs            Reopen an existing worktree in the editor
-    rm.rs              Worktree removal and branch cleanup
-    ls.rs              List worktrees and their status
-  config/
-    global.rs          Global config (load, save, editor CRUD)
-    state.rs           Per-repo worktree state tracking
-    workspace.rs       Workspace config (hierarchical .grove.toml lookup)
-  git.rs               Git operations (repo root, branch, worktree)
-  editor.rs            Editor command expansion and process spawn
-```
-
 ## Shell completions
 
-`grove` supports tab completions for all commands, flags, and arguments — including dynamic completion of worktree IDs for `grove open` and `grove rm`.
+`grove` supports tab completions for all commands, flags, and arguments — including dynamic completion of worktree IDs for `grove tend` and `grove cut`.
 
 Add the appropriate line to your shell profile:
 
