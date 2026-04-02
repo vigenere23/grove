@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::output::*;
 
-fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+fn copy_dir_recursive_fallback(src: &Path, dst: &Path) -> std::io::Result<()> {
     fs::create_dir_all(dst)?;
 
     for entry in fs::read_dir(src)? {
@@ -12,13 +12,78 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
         let dst_path = dst.join(entry.file_name());
 
         if src_path.is_dir() {
-            copy_dir_recursive(&src_path, &dst_path)?;
+            copy_dir_recursive_fallback(&src_path, &dst_path)?;
         } else {
             fs::copy(&src_path, &dst_path)?;
         }
     }
 
     Ok(())
+}
+
+fn try_os_copy(src: &Path, dst: &Path) -> std::io::Result<()> {
+    if let Some(parent) = dst.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    #[cfg(unix)]
+    {
+        let output = std::process::Command::new("cp")
+            .arg("-R")
+            .arg(src)
+            .arg(dst)
+            .output()?;
+
+        return if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("cp -R failed: {}", stderr.trim()),
+            ))
+        } else {
+            Ok(())
+        };
+    }
+
+    #[cfg(windows)]
+    {
+        let output = std::process::Command::new("robocopy")
+            .arg(src)
+            .arg(dst)
+            .args(["/E", "/NFL", "/NDL", "/NJH", "/NJS", "/NP"])
+            .output()?;
+
+        let code = output.status.code().unwrap_or(8);
+        return if code >= 8 {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("robocopy failed (exit {}): {}", code, stdout.trim()),
+            ))
+        } else {
+            Ok(())
+        };
+    }
+
+    #[allow(unreachable_code)]
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "no native copy command available on this platform",
+    ))
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    match try_os_copy(src, dst) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            eprintln!(
+                "{} fast copy failed ({}), falling back to manual copy",
+                YELLOW.paint("⚠"),
+                e,
+            );
+            copy_dir_recursive_fallback(src, dst)
+        }
+    }
 }
 
 /// Copy each path in `paths` from `source` into `dest`.
