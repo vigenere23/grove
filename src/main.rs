@@ -5,6 +5,7 @@ mod editor;
 mod git;
 mod copy;
 mod output;
+mod post_create;
 mod prompt;
 
 use clap::{builder::ValueHint, CommandFactory, Parser, Subcommand, ValueEnum};

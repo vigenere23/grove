@@ -62,13 +62,15 @@ At the top level of the same file you may set **`copy`** and **`link`** arrays (
 Place a `.grove.toml` file in any directory within a git repository to control the **workspace directory** (the directory containing the file defines the subdirectory used inside each new worktree). Optional fields:
 
 - **`editor`** — id of an editor defined in the global config. Used for merged `copy` / `link` paths and for `grove plant --open` / `grove tend` when you do not pass `--editor`. Omit it if you only need `copy` / `link` rules or never open an editor from that config.
-- **`copy`** — extra relative paths to copy into the worktree (see command reference).
-- **`link`** — extra relative paths to symlink into the worktree; each link points at the same path under your main checkout’s workspace directory so edits stay shared (see command reference). A path must not appear in both `copy` and `link` after merging with global config.
+- **`copy`** — extra relative paths to copy into the worktree (see command reference). If something already exists at that path in the new worktree, a warning is printed and it is removed first so the copy replaces it (same as `link`).
+- **`link`** — extra relative paths to symlink into the worktree; each link points at the same path under your main checkout’s workspace directory so edits stay shared (see command reference). If something already exists at that path, a warning is printed and it is removed before linking. A path must not appear in both `copy` and `link` after merging with global config.
+- **`post_create`** — optional list of shell commands to run from the new worktree’s workspace directory **after** copy/link and **after** `grove plant --open` launches the editor (when `--open` is used). Not supported in global config—workspace only. Commands run in order; output goes to your terminal; the first failure aborts `grove plant`.
 
 ```toml
 editor = "code"
 # copy = ["scripts/dev.sh"]
 # link = [".vscode/settings.json"]
+# post_create = ["npm ci"]
 ```
 
 When multiple `.grove.toml` files exist between your current directory and the git root, the most specific one (closest to your current directory) takes priority.

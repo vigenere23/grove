@@ -3,7 +3,21 @@ use std::path::Path;
 
 use crate::output::*;
 
-/// Remove a file, symlink, or directory at `path` so a symlink can be created in its place.
+fn destination_exists(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok()
+}
+
+fn warn_replacing_destination(op: &str, rel: &str, dst: &Path) {
+    eprintln!(
+        "{} destination exists; removing before {}: {} ({})",
+        YELLOW.paint("⚠"),
+        op,
+        rel,
+        dst.display(),
+    );
+}
+
+/// Remove a file, symlink, or directory at `path` so a copy or symlink can replace it.
 fn remove_existing_destination(path: &Path) -> std::io::Result<()> {
     match fs::symlink_metadata(path) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -127,9 +141,10 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
 
 /// Copy each path in `paths` from `source` into `dest`.
 ///
-/// Missing source entries are silently skipped. Copy failures print a warning
-/// but do not abort the operation. Returns the list of paths that were
-/// successfully copied.
+/// Missing source entries are silently skipped. If the destination path already exists, a warning
+/// is printed to stderr, then it is removed (file, symlink, or directory tree) so the copy replaces
+/// it—same as [`link_paths`]. Copy failures print a warning but do not abort the operation.
+/// Returns the list of paths that were successfully copied.
 pub fn copy_paths(source: &Path, dest: &Path, paths: &[String]) -> Vec<String> {
     verbose!("copy_paths: source={}, dest={}", source.display(), dest.display());
     verbose!("copy_paths: paths={:?}", paths);
@@ -145,8 +160,23 @@ pub fn copy_paths(source: &Path, dest: &Path, paths: &[String]) -> Vec<String> {
             continue;
         }
 
+        if destination_exists(&dst) {
+            warn_replacing_destination("copy", rel, &dst);
+        }
+
         verbose!("copy_paths: copying '{}' ({} -> {})", rel, src.display(), dst.display());
         println!("  {} {}", DIM.paint("copying"), rel);
+
+        if let Err(e) = remove_existing_destination(&dst) {
+            eprintln!(
+                "{} could not remove existing destination for copy {} ({}): {}",
+                YELLOW.paint("⚠"),
+                rel,
+                dst.display(),
+                e,
+            );
+            continue;
+        }
 
         let result = if src.is_dir() {
             copy_dir_recursive(&src, &dst)
@@ -183,9 +213,9 @@ pub fn copy_paths(source: &Path, dest: &Path, paths: &[String]) -> Vec<String> {
 
 /// Create a symlink at `dest`/`<rel>` pointing to the canonical path of `source`/`<rel>`.
 ///
-/// Missing source entries are silently skipped. If the destination path already exists, it
-/// is removed (file, symlink, or directory tree) so the symlink can replace it. Failures print
-/// a warning. Returns the list of paths that were successfully linked.
+/// Missing source entries are silently skipped. If the destination path already exists, a warning
+/// is printed to stderr, then it is removed (file, symlink, or directory tree) so the symlink can
+/// replace it. Failures print a warning. Returns the list of paths that were successfully linked.
 pub fn link_paths(source: &Path, dest: &Path, paths: &[String]) -> Vec<String> {
     verbose!("link_paths: source={}, dest={}", source.display(), dest.display());
     verbose!("link_paths: paths={:?}", paths);
@@ -204,6 +234,12 @@ pub fn link_paths(source: &Path, dest: &Path, paths: &[String]) -> Vec<String> {
             );
             continue;
         }
+
+        if destination_exists(&dst) {
+            warn_replacing_destination("link", rel, &dst);
+        }
+
+        println!("  {} {}", DIM.paint("linking"), rel);
 
         if let Err(e) = remove_existing_destination(&dst) {
             eprintln!(
@@ -235,7 +271,6 @@ pub fn link_paths(source: &Path, dest: &Path, paths: &[String]) -> Vec<String> {
             dst.display(),
             target.display()
         );
-        println!("  {} {}", DIM.paint("linking"), rel);
 
         let src_is_dir = src.is_dir();
         let result = if let Some(parent) = dst.parent() {

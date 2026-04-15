@@ -30,6 +30,9 @@ pub struct WorkspaceConfig {
     pub copy: Vec<String>,
     #[serde(default)]
     pub link: Vec<String>,
+    /// Shell commands to run after copy/link and after `--open` (if used). Workspace config only.
+    #[serde(default)]
+    pub post_create: Vec<String>,
 }
 
 pub struct ResolvedWorkspace {

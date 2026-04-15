@@ -12,6 +12,7 @@ use crate::copy;
 use crate::editor;
 use crate::git;
 use crate::output::*;
+use crate::post_create;
 use crate::prompt;
 
 enum BranchAction {
@@ -65,7 +66,7 @@ pub fn run(
     let cwd = env::current_dir().context("failed to determine current working directory")?;
     verbose!("cwd: {}", cwd.display());
 
-    let (workspace_editor, workspace_dir, workspace_copy, workspace_link) =
+    let (workspace_editor, workspace_dir, workspace_copy, workspace_link, workspace_post_create) =
         if let Some(ref ws) = workspace_override {
             let ws_path = cwd.join(ws);
             verbose!("workspace override: {}", ws_path.display());
@@ -76,11 +77,13 @@ pub fn run(
             }
             let copy_inc = resolved.config.copy.clone();
             let link_inc = resolved.config.link.clone();
+            let post_inc = resolved.config.post_create.clone();
             verbose!(
-                "workspace config editor={:?}, copy={:?}, link={:?}, config_dir={}",
+                "workspace config editor={:?}, copy={:?}, link={:?}, post_create={:?}, config_dir={}",
                 resolved.config.editor,
                 copy_inc,
                 link_inc,
+                post_inc,
                 resolved.config_dir.display()
             );
             (
@@ -88,6 +91,7 @@ pub fn run(
                 resolved.config_dir,
                 copy_inc,
                 link_inc,
+                post_inc,
             )
         } else {
             match workspace::find_workspace_config(&cwd, &git_root)
@@ -99,11 +103,13 @@ pub fn run(
                     }
                     let copy_inc = resolved.config.copy.clone();
                     let link_inc = resolved.config.link.clone();
+                    let post_inc = resolved.config.post_create.clone();
                     verbose!(
-                        "workspace config found: editor={:?}, copy={:?}, link={:?}, config_dir={}",
+                        "workspace config found: editor={:?}, copy={:?}, link={:?}, post_create={:?}, config_dir={}",
                         resolved.config.editor,
                         copy_inc,
                         link_inc,
+                        post_inc,
                         resolved.config_dir.display()
                     );
                     (
@@ -111,6 +117,7 @@ pub fn run(
                         resolved.config_dir,
                         copy_inc,
                         link_inc,
+                        post_inc,
                     )
                 }
                 None => {
@@ -158,8 +165,15 @@ pub fn run(
     let explicit_branch = branch.is_some();
     let desired_branch = branch.unwrap_or_else(|| format!("wip/{id}"));
 
-    let (actual_id, worktree_path, branch_action) =
-        resolve_conflicts(&git_root, &id, &from_branch, &desired_branch, explicit_branch)?;
+    let (actual_id, worktree_path, branch_action) = resolve_conflicts(
+        &git_root,
+        &id,
+        &from_branch,
+        &desired_branch,
+        explicit_branch,
+        workspace_override.clone(),
+        editor_override.clone(),
+    )?;
 
     // ── Phase 2: execute actions ────────────────────────────────────────
 
@@ -202,6 +216,11 @@ pub fn run(
         editor::open(editor_cfg, &editor_workspace).context("failed to open editor")?;
     }
 
+    if !workspace_post_create.is_empty() {
+        post_create::run(&editor_workspace, &workspace_post_create)
+            .context("post-create command")?;
+    }
+
     save_state(&git_root, &actual_id, relative_workspace)?;
 
     if open_editor {
@@ -224,6 +243,8 @@ fn resolve_conflicts(
     from_branch: &str,
     desired_branch: &str,
     explicit_branch: bool,
+    workspace_override: Option<String>,
+    editor_override: Option<String>,
 ) -> Result<(String, PathBuf, BranchAction)> {
     let worktree_path = git::worktree_dir(git_root, id);
     let wt_exists = worktree_path.exists();
@@ -250,7 +271,12 @@ fn resolve_conflicts(
 
         // ── Only the worktree exists ────────────────────────────────
         (true, false) => {
-            let (actual_id, actual_path) = resolve_worktree_only(git_root, id)?;
+            let (actual_id, actual_path) = resolve_worktree_only(
+                git_root,
+                id,
+                workspace_override.clone(),
+                editor_override.clone(),
+            )?;
             Ok((
                 actual_id,
                 actual_path,
@@ -263,8 +289,15 @@ fn resolve_conflicts(
 
         // ── Both exist ──────────────────────────────────────────────
         (true, true) => {
-            let (actual_id, actual_path, branch_action) =
-                resolve_both(git_root, id, from_branch, desired_branch, explicit_branch)?;
+            let (actual_id, actual_path, branch_action) = resolve_both(
+                git_root,
+                id,
+                from_branch,
+                desired_branch,
+                explicit_branch,
+                workspace_override.clone(),
+                editor_override.clone(),
+            )?;
             Ok((actual_id, actual_path, branch_action))
         }
     }
@@ -310,10 +343,19 @@ fn resolve_branch_only(
 }
 
 /// Only the worktree directory exists — ask whether to open it or pick a new name.
-fn resolve_worktree_only(git_root: &Path, id: &str) -> Result<(String, PathBuf)> {
+fn resolve_worktree_only(
+    git_root: &Path,
+    id: &str,
+    workspace_override: Option<String>,
+    editor_override: Option<String>,
+) -> Result<(String, PathBuf)> {
     match prompt::ask_worktree_conflict(id)? {
         prompt::WorktreeConflictChoice::OpenExisting => {
-            commands::open::run(Some(id.to_string()), None, None)?;
+            commands::open::run(
+                Some(id.to_string()),
+                workspace_override,
+                editor_override,
+            )?;
             std::process::exit(0);
         }
         prompt::WorktreeConflictChoice::NewName(new_id) => {
@@ -337,10 +379,16 @@ fn resolve_both(
     from_branch: &str,
     desired_branch: &str,
     explicit_branch: bool,
+    workspace_override: Option<String>,
+    editor_override: Option<String>,
 ) -> Result<(String, PathBuf, BranchAction)> {
     match prompt::ask_both_conflict(id, desired_branch)? {
         prompt::BothConflictChoice::OpenExisting => {
-            commands::open::run(Some(id.to_string()), None, None)?;
+            commands::open::run(
+                Some(id.to_string()),
+                workspace_override,
+                editor_override,
+            )?;
             std::process::exit(0);
         }
         prompt::BothConflictChoice::NewName(new_id) => {
