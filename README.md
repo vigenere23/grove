@@ -55,16 +55,20 @@ command = "cursor $workspace"
 
 The `$workspace` placeholder is replaced with the resolved workspace path at launch time.
 
+At the top level of the same file you may set **`copy`** and **`link`** arrays (paths relative to the workspace directory) that apply for every editor; per-editor tables may also include **`copy`** and **`link`**. See [docs/commands.md](docs/commands.md) for how `grove plant` merges these with `.grove.toml`.
+
 ### Workspace config — `.grove.toml`
 
 Place a `.grove.toml` file in any directory within a git repository to control the **workspace directory** (the directory containing the file defines the subdirectory used inside each new worktree). Optional fields:
 
-- **`editor`** — id of an editor defined in the global config. Used for `resolved_copy` paths and for `grove plant --open` / `grove tend` when you do not pass `--editor`. Omit it if you only need `copy` rules or never open an editor from that config.
+- **`editor`** — id of an editor defined in the global config. Used for merged `copy` / `link` paths and for `grove plant --open` / `grove tend` when you do not pass `--editor`. Omit it if you only need `copy` / `link` rules or never open an editor from that config.
 - **`copy`** — extra relative paths to copy into the worktree (see command reference).
+- **`link`** — extra relative paths to symlink into the worktree; each link points at the same path under your main checkout’s workspace directory so edits stay shared (see command reference). A path must not appear in both `copy` and `link` after merging with global config.
 
 ```toml
 editor = "code"
 # copy = ["scripts/dev.sh"]
+# link = [".vscode/settings.json"]
 ```
 
 When multiple `.grove.toml` files exist between your current directory and the git root, the most specific one (closest to your current directory) takes priority.

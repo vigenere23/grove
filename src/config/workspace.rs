@@ -28,6 +28,8 @@ pub struct WorkspaceConfig {
     pub editor: Option<String>,
     #[serde(default)]
     pub copy: Vec<String>,
+    #[serde(default)]
+    pub link: Vec<String>,
 }
 
 pub struct ResolvedWorkspace {

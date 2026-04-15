@@ -32,6 +32,8 @@ Register a new editor in the global config (`~/.config/grove/config.toml`).
 | `<ID>`        | Unique identifier for the editor (e.g. `code`, `cursor`, `nvim`)   |
 | `--name`      | Human-readable display name                                        |
 | `--command`   | Shell command to launch the editor. Use `$workspace` as a placeholder for the workspace path. |
+| `--copy`      | Relative path to copy into new worktrees when this editor is selected (repeatable). |
+| `--link`      | Relative path to symlink into new worktrees when this editor is selected (repeatable). |
 
 **Example:**
 
@@ -82,7 +84,7 @@ Create a git worktree using the nearest `.grove.toml` between the current direct
 | `<ID>`         | Worktree identifier (directory name under `.grove__<repo>/` and default branch `wip/<ID>`). *Required.* |
 | `--from`       | Existing branch to base the new worktree branch on. Default: current branch. |
 | `--branch`     | Branch name to create or attach in the worktree. Default: `wip/<ID>`. |
-| `--open`       | After creating the worktree and copying files, launch an editor at `<worktree>/<workspace-path>`. |
+| `--open`       | After creating the worktree and applying `copy` / `link` paths, launch an editor at `<worktree>/<workspace-path>`. |
 | `-e`, `--editor` | With `--open`, use this **global** editor id instead of the `editor` field in `.grove.toml`. Requires `--open`. |
 | `-w`, `--workspace` | Directory that contains a `.grove.toml` (resolved relative to cwd); overrides the walk from cwd to git root. |
 
@@ -90,11 +92,12 @@ Create a git worktree using the nearest `.grove.toml` between the current direct
 
 1. **Finds the git root** of the current repository.
 2. **Loads workspace config** — walks from cwd up to the git root for `.grove.toml`, or loads from `-w`/`--workspace`. Fails if no file is found.
-3. **Validates `editor` in TOML** when it is set (must match an id in `grove config editors list`). The `editor` key is optional in `.grove.toml`; if it is omitted, global + workspace `copy` rules still apply, but you need **`--editor <id>`** together with **`--open`** to launch an editor.
-4. **Creates the worktree** at `<git-root>/../.grove__<repo-name>/<ID>` (after any conflict prompts).
-5. **Copies paths** from the global config and from the resolved editor’s `copy` list, plus any `copy` entries in `.grove.toml`, into `<worktree-path>/<workspace-path>`, where `<workspace-path>` is the path from the git root to the directory that contains the selected `.grove.toml`.
-6. **If `--open`:** resolves the editor id as `editor` from TOML, or `--editor` if given, then runs that editor’s command with `$workspace` set to the directory from step 5.
-7. **Saves state** for this worktree: only the **workspace** path (the subdirectory under the worktree, relative to the git root — the directory that contained the chosen `.grove.toml`).
+3. **Validates `editor` in TOML** when it is set (must match an id in `grove config editors list`). The `editor` key is optional in `.grove.toml`; if it is omitted, global + workspace `copy` / `link` rules still apply, but you need **`--editor <id>`** together with **`--open`** to launch an editor.
+4. **Merges `copy` and `link` lists** from global config, the resolved editor (when `editor` is set in TOML or implied by `--editor` for `--open`), and `.grove.toml`, using the same dedupe rules as for `copy` alone. If **any relative path** appears in **both** merged lists, the command fails with an invalid-config error (before creating the worktree).
+5. **Creates the worktree** at `<git-root>/../.grove__<repo-name>/<ID>` (after any conflict prompts).
+6. **Copies** merged `copy` paths, then **creates symlinks** for merged `link` paths, under `<worktree-path>/<workspace-path>`, where `<workspace-path>` is the path from the git root to the directory that contains the selected `.grove.toml`. For each path, a **`copying <path>`** line is printed when that copy starts, then **`copied <path>`** on success. Each symlink’s target is the **canonical** path of the corresponding file or directory in the main checkout’s workspace (the directory that contains `.grove.toml`). If a link destination already exists, it is **removed** (file, symlink, or directory tree) so the symlink can replace it; **`linking <path>`** is printed when that link step starts, then **`linked <path>`** on success. On **Windows**, creating symlinks may require Developer Mode or an elevated shell, depending on your policy.
+7. **If `--open`:** resolves the editor id as `editor` from TOML, or `--editor` if given, then runs that editor’s command with `$workspace` set to the directory from step 6.
+8. **Saves state** for this worktree: only the **workspace** path (the subdirectory under the worktree, relative to the git root — the directory that contained the chosen `.grove.toml`).
 
 ### Example
 
@@ -138,6 +141,7 @@ grove plant featureX --open --editor cursor
 | `--editor` without `--open` on `plant`            | Clap error: `--editor` requires `--open` |
 | Editor command is empty                            | `editor command is empty` |
 | Editor binary cannot be executed                   | `failed to launch editor '<command>': <OS error>` |
+| Same path in merged `copy` and `link`             | Message begins with `invalid config:` and lists overlapping paths |
 
 ---
 

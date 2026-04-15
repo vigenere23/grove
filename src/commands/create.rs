@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
 
@@ -18,6 +19,32 @@ enum BranchAction {
     Reuse { name: String },
 }
 
+fn merge_workspace_paths(into: &mut Vec<String>, extra: &[String]) {
+    for path in extra {
+        if !into.contains(path) {
+            into.push(path.clone());
+        }
+    }
+}
+
+fn ensure_copy_and_link_disjoint(copy: &[String], link: &[String]) -> Result<()> {
+    let copy_set: HashSet<_> = copy.iter().collect();
+    let mut overlap: Vec<String> = link
+        .iter()
+        .filter(|p| copy_set.contains(p))
+        .cloned()
+        .collect();
+    if overlap.is_empty() {
+        return Ok(());
+    }
+    overlap.sort();
+    overlap.dedup();
+    bail!(
+        "invalid config: the following path(s) appear in both `copy` and `link` after merging global, editor-specific, and workspace config: {}",
+        overlap.join(", "),
+    );
+}
+
 pub fn run(
     id: String,
     from: Option<String>,
@@ -33,11 +60,12 @@ pub fn run(
 
     let global_config = GlobalConfig::load().context("failed to load global config")?;
     verbose!("global copy: {:?}", global_config.copy);
+    verbose!("global link: {:?}", global_config.link);
 
     let cwd = env::current_dir().context("failed to determine current working directory")?;
     verbose!("cwd: {}", cwd.display());
 
-    let (workspace_editor, workspace_dir, workspace_copy) =
+    let (workspace_editor, workspace_dir, workspace_copy, workspace_link) =
         if let Some(ref ws) = workspace_override {
             let ws_path = cwd.join(ws);
             verbose!("workspace override: {}", ws_path.display());
@@ -46,14 +74,21 @@ pub fn run(
             if let Some(ref editor_id) = resolved.config.editor {
                 global_config.get_editor(editor_id)?;
             }
-            let inc = resolved.config.copy.clone();
+            let copy_inc = resolved.config.copy.clone();
+            let link_inc = resolved.config.link.clone();
             verbose!(
-                "workspace config editor={:?}, copy={:?}, config_dir={}",
+                "workspace config editor={:?}, copy={:?}, link={:?}, config_dir={}",
                 resolved.config.editor,
-                inc,
+                copy_inc,
+                link_inc,
                 resolved.config_dir.display()
             );
-            (resolved.config.editor, resolved.config_dir, inc)
+            (
+                resolved.config.editor,
+                resolved.config_dir,
+                copy_inc,
+                link_inc,
+            )
         } else {
             match workspace::find_workspace_config(&cwd, &git_root)
                 .context("failed to read workspace config")?
@@ -62,14 +97,21 @@ pub fn run(
                     if let Some(ref editor_id) = resolved.config.editor {
                         global_config.get_editor(editor_id)?;
                     }
-                    let inc = resolved.config.copy.clone();
+                    let copy_inc = resolved.config.copy.clone();
+                    let link_inc = resolved.config.link.clone();
                     verbose!(
-                        "workspace config found: editor={:?}, copy={:?}, config_dir={}",
+                        "workspace config found: editor={:?}, copy={:?}, link={:?}, config_dir={}",
                         resolved.config.editor,
-                        inc,
+                        copy_inc,
+                        link_inc,
                         resolved.config_dir.display()
                     );
-                    (resolved.config.editor, resolved.config_dir, inc)
+                    (
+                        resolved.config.editor,
+                        resolved.config_dir,
+                        copy_inc,
+                        link_inc,
+                    )
                 }
                 None => {
                     bail!(
@@ -81,6 +123,24 @@ pub fn run(
                 }
             }
         };
+
+    let relative_workspace = workspace_dir
+        .strip_prefix(&git_root)
+        .unwrap_or_else(|_| workspace_dir.as_ref());
+    verbose!("relative_workspace: {}", relative_workspace.display());
+
+    let copy_key = workspace_editor.as_deref().unwrap_or("");
+    let mut copy_paths = global_config.resolved_copy(copy_key);
+    verbose!("resolved copy (global+editor): {:?}", copy_paths);
+    merge_workspace_paths(&mut copy_paths, &workspace_copy);
+    verbose!("final copy paths: {:?}", copy_paths);
+
+    let mut link_paths = global_config.resolved_link(copy_key);
+    verbose!("resolved link (global+editor): {:?}", link_paths);
+    merge_workspace_paths(&mut link_paths, &workspace_link);
+    verbose!("final link paths: {:?}", link_paths);
+
+    ensure_copy_and_link_disjoint(&copy_paths, &link_paths)?;
 
     if let Some(ref eid) = editor_override {
         global_config.get_editor(eid)?;
@@ -116,27 +176,22 @@ pub fn run(
         }
     };
 
-    let relative_workspace = workspace_dir
-        .strip_prefix(&git_root)
-        .unwrap_or_else(|_| workspace_dir.as_ref());
     verbose!("workspace_editor: {:?}", workspace_editor);
     verbose!("workspace_dir: {}", workspace_dir.display());
-    verbose!("relative_workspace: {}", relative_workspace.display());
 
     let editor_workspace = worktree_path.join(relative_workspace);
     verbose!("editor_workspace (dest): {}", editor_workspace.display());
 
-    let copy_key = workspace_editor.as_deref().unwrap_or("");
-    let mut copy_paths = global_config.resolved_copy(copy_key);
-    verbose!("resolved copy (global+editor): {:?}", copy_paths);
-    for path in workspace_copy {
-        if !copy_paths.contains(&path) {
-            copy_paths.push(path);
-        }
-    }
-    verbose!("final copy paths: {:?}", copy_paths);
+    println!(
+        "{} Worktree {} created on branch {} at {}",
+        GREEN.paint("✔"),
+        BOLD_CYAN.paint(&actual_id),
+        BOLD_CYAN.paint(actual_branch),
+        worktree_path.display(),
+    );
 
-    let copied = copy::copy_paths(&workspace_dir, &editor_workspace, &copy_paths);
+    copy::copy_paths(&workspace_dir, &editor_workspace, &copy_paths);
+    copy::link_paths(&workspace_dir, &editor_workspace, &link_paths);
 
     if open_editor {
         let Some(editor_id) = editor_override.as_deref().or(workspace_editor.as_deref()) else {
@@ -149,16 +204,6 @@ pub fn run(
 
     save_state(&git_root, &actual_id, relative_workspace)?;
 
-    println!(
-        "{} Worktree {} created on branch {} at {}",
-        GREEN.paint("✔"),
-        BOLD_CYAN.paint(&actual_id),
-        BOLD_CYAN.paint(actual_branch),
-        worktree_path.display(),
-    );
-    for path in &copied {
-        println!("  {} {}", DIM.paint("copied"), path);
-    }
     if open_editor {
         println!(
             "{} Editor opened at {}",

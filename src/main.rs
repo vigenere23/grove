@@ -123,6 +123,9 @@ enum EditorCommands {
         /// Paths to copy into new worktrees when using this editor (repeatable)
         #[arg(long)]
         copy: Vec<String>,
+        /// Paths to symlink into new worktrees when using this editor (repeatable)
+        #[arg(long)]
+        link: Vec<String>,
     },
     /// Remove an editor
     Remove {
@@ -162,8 +165,8 @@ fn main() -> anyhow::Result<()> {
             ConfigCommands::Edit => commands::config::edit(),
             ConfigCommands::Editors { command } => match command {
                 EditorCommands::List => commands::config::list_editors(),
-                EditorCommands::Add { id, name, command, copy } => {
-                    commands::config::add_editor(id, name, command, copy)
+                EditorCommands::Add { id, name, command, copy, link } => {
+                    commands::config::add_editor(id, name, command, copy, link)
                 }
                 EditorCommands::Remove { id } => commands::config::remove_editor(id),
             },

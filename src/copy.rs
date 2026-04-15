@@ -3,6 +3,45 @@ use std::path::Path;
 
 use crate::output::*;
 
+/// Remove a file, symlink, or directory at `path` so a symlink can be created in its place.
+fn remove_existing_destination(path: &Path) -> std::io::Result<()> {
+    match fs::symlink_metadata(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+        Ok(md) => {
+            let ft = md.file_type();
+            if ft.is_dir() && !ft.is_symlink() {
+                fs::remove_dir_all(path)
+            } else {
+                fs::remove_file(path)
+            }
+        }
+    }
+}
+
+fn create_symlink(target: &Path, link: &Path, src_is_dir: bool) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        let _ = src_is_dir;
+        std::os::unix::fs::symlink(target, link)
+    }
+    #[cfg(windows)]
+    {
+        if src_is_dir {
+            std::os::windows::fs::symlink_dir(target, link)
+        } else {
+            std::os::windows::fs::symlink_file(target, link)
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "symlinks are only supported on Unix and Windows",
+        ))
+    }
+}
+
 fn copy_dir_recursive_fallback(src: &Path, dst: &Path) -> std::io::Result<()> {
     fs::create_dir_all(dst)?;
 
@@ -107,6 +146,7 @@ pub fn copy_paths(source: &Path, dest: &Path, paths: &[String]) -> Vec<String> {
         }
 
         verbose!("copy_paths: copying '{}' ({} -> {})", rel, src.display(), dst.display());
+        println!("  {} {}", DIM.paint("copying"), rel);
 
         let result = if src.is_dir() {
             copy_dir_recursive(&src, &dst)
@@ -124,6 +164,7 @@ pub fn copy_paths(source: &Path, dest: &Path, paths: &[String]) -> Vec<String> {
         match result {
             Ok(()) => {
                 verbose!("copy_paths: '{}' copied successfully", rel);
+                println!("  {} {}", DIM.paint("copied"), rel);
                 copied.push(rel.clone());
             }
             Err(e) => {
@@ -138,4 +179,87 @@ pub fn copy_paths(source: &Path, dest: &Path, paths: &[String]) -> Vec<String> {
     }
 
     copied
+}
+
+/// Create a symlink at `dest`/`<rel>` pointing to the canonical path of `source`/`<rel>`.
+///
+/// Missing source entries are silently skipped. If the destination path already exists, it
+/// is removed (file, symlink, or directory tree) so the symlink can replace it. Failures print
+/// a warning. Returns the list of paths that were successfully linked.
+pub fn link_paths(source: &Path, dest: &Path, paths: &[String]) -> Vec<String> {
+    verbose!("link_paths: source={}, dest={}", source.display(), dest.display());
+    verbose!("link_paths: paths={:?}", paths);
+
+    let mut linked = Vec::new();
+
+    for rel in paths {
+        let src = source.join(rel);
+        let dst = dest.join(rel);
+
+        if !src.exists() {
+            verbose!(
+                "link_paths: skipping '{}' — source does not exist ({})",
+                rel,
+                src.display()
+            );
+            continue;
+        }
+
+        if let Err(e) = remove_existing_destination(&dst) {
+            eprintln!(
+                "{} could not remove existing destination for symlink {} ({}): {}",
+                YELLOW.paint("⚠"),
+                rel,
+                dst.display(),
+                e,
+            );
+            continue;
+        }
+
+        let target = match src.canonicalize() {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!(
+                    "{} failed to resolve source for symlink {}: {}",
+                    YELLOW.paint("⚠"),
+                    rel,
+                    e,
+                );
+                continue;
+            }
+        };
+
+        verbose!(
+            "link_paths: linking '{}' ({} -> {})",
+            rel,
+            dst.display(),
+            target.display()
+        );
+        println!("  {} {}", DIM.paint("linking"), rel);
+
+        let src_is_dir = src.is_dir();
+        let result = if let Some(parent) = dst.parent() {
+            fs::create_dir_all(parent).and_then(|_| create_symlink(&target, &dst, src_is_dir))
+        } else {
+            create_symlink(&target, &dst, src_is_dir)
+        };
+
+        match result {
+            Ok(()) => {
+                verbose!("link_paths: '{}' linked successfully", rel);
+                println!("  {} {}", DIM.paint("linked"), rel);
+                linked.push(rel.clone());
+            }
+            Err(e) => {
+                eprintln!(
+                    "{} failed to symlink {}: {}",
+                    YELLOW.paint("⚠"),
+                    rel,
+                    e,
+                );
+            }
+        }
+    }
+
+    linked
 }
