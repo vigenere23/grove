@@ -45,7 +45,7 @@ enum Commands {
         #[arg(long, value_enum)]
         branch: Option<BranchCleanup>,
     },
-    /// Create a worktree and open an editor
+    /// Create a git worktree using workspace config
     #[command(visible_alias = "new", visible_alias = "create")]
     Plant {
         /// Worktree identifier
@@ -56,6 +56,12 @@ enum Commands {
         /// New branch name to create (default: wip/<id>)
         #[arg(short, long)]
         branch: Option<String>,
+        /// Open the editor configured in `.grove.toml` after creating the worktree
+        #[arg(long)]
+        open: bool,
+        /// When using `--open`, launch this editor id from global config instead of `.grove.toml`
+        #[arg(short = 'e', long, value_name = "ID", requires = "open")]
+        editor: Option<String>,
         /// Override the workspace directory (must contain a .grove.toml)
         #[arg(short, long, value_hint = ValueHint::DirPath)]
         workspace: Option<String>,
@@ -65,6 +71,9 @@ enum Commands {
     Tend {
         /// Worktree identifier (interactive selection if omitted)
         id: Option<String>,
+        /// Launch this editor id from global config instead of `.grove.toml`
+        #[arg(short = 'e', long, value_name = "ID")]
+        editor: Option<String>,
         /// Override the workspace directory (must contain a .grove.toml)
         #[arg(short, long, value_hint = ValueHint::DirPath)]
         workspace: Option<String>,
@@ -166,10 +175,19 @@ fn main() -> anyhow::Result<()> {
             current,
             branch,
         } => commands::remove::run(id, force, all, current, branch),
-        Commands::Plant { id, from, branch, workspace } => {
-            commands::create::run(id, from, branch, workspace)
-        }
-        Commands::Tend { id, workspace } => commands::open::run(id, workspace),
+        Commands::Plant {
+            id,
+            from,
+            branch,
+            workspace,
+            open,
+            editor,
+        } => commands::create::run(id, from, branch, workspace, open, editor),
+        Commands::Tend {
+            id,
+            workspace,
+            editor,
+        } => commands::open::run(id, workspace, editor),
         Commands::Trees { details } => commands::list::run(details),
     }
 }

@@ -11,7 +11,11 @@ use crate::git;
 use crate::output::*;
 use crate::prompt::{self, SelectItem};
 
-pub fn run(id: Option<String>, workspace_override: Option<String>) -> Result<()> {
+pub fn run(
+    id: Option<String>,
+    workspace_override: Option<String>,
+    editor_override: Option<String>,
+) -> Result<()> {
     let git_root = git::repo_root().context("failed to find git repository root")?;
     verbose!("git root: {}", git_root.display());
     let worktrees = git::list_worktrees().context("failed to list worktrees")?;
@@ -39,14 +43,26 @@ pub fn run(id: Option<String>, workspace_override: Option<String>) -> Result<()>
         .with_context(|| format!("no worktree found with id '{id}'"))?;
 
     let global_config = GlobalConfig::load().context("failed to load global config")?;
+    let ov = editor_override.as_deref();
 
     let (editor_id, relative_workspace) = if let Some(ref ws) = workspace_override {
         let cwd = env::current_dir().context("failed to determine current working directory")?;
         let ws_path = cwd.join(ws);
         let resolved = workspace::load_workspace_config(&ws_path)
             .with_context(|| format!("failed to load workspace config from '{ws}'"))?;
-        let editor_id = resolved.config.editor;
-        global_config.get_editor(&editor_id)?;
+        let editor_id = match (&resolved.config.editor, ov) {
+            (_, Some(o)) => {
+                global_config.get_editor(o)?;
+                o.to_string()
+            }
+            (Some(id), None) => {
+                global_config.get_editor(id)?;
+                id.clone()
+            }
+            (None, None) => bail!(
+                "no `editor` in .grove.toml under '{ws}' — set `editor` to an id from `grove config editors list`, or pass --editor <id>",
+            ),
+        };
         let rel_workspace = resolved
             .config_dir
             .strip_prefix(&git_root)
@@ -56,7 +72,6 @@ pub fn run(id: Option<String>, workspace_override: Option<String>) -> Result<()>
         state.add(
             id.clone(),
             WorktreeState {
-                editor: editor_id.clone(),
                 workspace: rel_workspace.clone(),
             },
         );
@@ -65,15 +80,27 @@ pub fn run(id: Option<String>, workspace_override: Option<String>) -> Result<()>
         (editor_id, rel_workspace)
     } else {
         match state.get(&id) {
-            Ok(wt_state) => (wt_state.editor.clone(), wt_state.workspace.clone()),
+            Ok(wt_state) => {
+                let relative_workspace = wt_state.workspace.clone();
+                let editor_id = match ov {
+                    Some(o) => {
+                        global_config.get_editor(o)?;
+                        o.to_string()
+                    }
+                    None => {
+                        let (id, _) = resolve_editor(&global_config, &worktree_info.path, None)?;
+                        id
+                    }
+                };
+                (editor_id, relative_workspace)
+            }
             Err(_) => {
                 let (editor_id, rel_workspace) =
-                    resolve_editor(&global_config, &worktree_info.path)?;
+                    resolve_editor(&global_config, &worktree_info.path, ov)?;
 
                 state.add(
                     id.clone(),
                     WorktreeState {
-                        editor: editor_id.clone(),
                         workspace: rel_workspace.clone(),
                     },
                 );
@@ -100,6 +127,7 @@ pub fn run(id: Option<String>, workspace_override: Option<String>) -> Result<()>
 fn resolve_editor(
     global_config: &GlobalConfig,
     worktree_path: &Path,
+    editor_override: Option<&str>,
 ) -> Result<(String, std::path::PathBuf)> {
     let cwd = env::current_dir().context("failed to determine current working directory")?;
 
@@ -113,19 +141,31 @@ fn resolve_editor(
         .context("failed to read workspace config")?
     {
         Some(resolved) => {
-            let editor_id = resolved.config.editor;
-            global_config.get_editor(&editor_id)?;
             let relative_workspace = resolved
                 .config_dir
                 .strip_prefix(worktree_path)
                 .unwrap_or_else(|_| resolved.config_dir.as_ref())
                 .to_path_buf();
+            let editor_id = match (&resolved.config.editor, editor_override) {
+                (_, Some(o)) => {
+                    global_config.get_editor(o)?;
+                    o.to_string()
+                }
+                (Some(id), None) => {
+                    global_config.get_editor(id)?;
+                    id.clone()
+                }
+                (None, None) => bail!(
+                    "no `editor` in .grove.toml under this worktree — set `editor` to an id from `grove config editors list`, or pass --editor <id>",
+                ),
+            };
             Ok((editor_id, relative_workspace))
         }
-        None => {
-            let (first_id, _) = global_config.first_editor()?;
-            Ok((first_id.clone(), std::path::PathBuf::new()))
-        }
+        None => bail!(
+            "no .grove.toml found between {} and worktree root {} — add one with an `editor` key, or use --workspace",
+            search_dir.display(),
+            worktree_path.display(),
+        ),
     }
 }
 

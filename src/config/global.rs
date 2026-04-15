@@ -37,9 +37,6 @@ pub enum GlobalConfigError {
 
     #[error("editor '{0}' not found")]
     EditorNotFound(String),
-
-    #[error("no editors configured — add one with `grove config editors add`")]
-    NoEditors,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,13 +124,6 @@ impl GlobalConfig {
         self.editors
             .get(id)
             .ok_or_else(|| GlobalConfigError::EditorNotFound(id.to_string()))
-    }
-
-    pub fn first_editor(&self) -> Result<(&String, &EditorConfig), GlobalConfigError> {
-        self.editors
-            .iter()
-            .next()
-            .ok_or(GlobalConfigError::NoEditors)
     }
 
     /// Merge global-level `copy` with editor-specific `copy`, deduplicating.

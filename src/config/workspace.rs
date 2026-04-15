@@ -24,7 +24,8 @@ pub enum WorkspaceConfigError {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct WorkspaceConfig {
-    pub editor: String,
+    #[serde(default)]
+    pub editor: Option<String>,
     #[serde(default)]
     pub copy: Vec<String>,
 }

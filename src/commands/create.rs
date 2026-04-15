@@ -7,9 +7,9 @@ use crate::commands;
 use crate::config::global::GlobalConfig;
 use crate::config::state::{RepoState, WorktreeState};
 use crate::config::workspace;
+use crate::copy;
 use crate::editor;
 use crate::git;
-use crate::copy;
 use crate::output::*;
 use crate::prompt;
 
@@ -23,6 +23,8 @@ pub fn run(
     from: Option<String>,
     branch: Option<String>,
     workspace_override: Option<String>,
+    open_editor: bool,
+    editor_override: Option<String>,
 ) -> Result<()> {
     // ── Phase 1: gather context & validate ──────────────────────────────
 
@@ -35,39 +37,60 @@ pub fn run(
     let cwd = env::current_dir().context("failed to determine current working directory")?;
     verbose!("cwd: {}", cwd.display());
 
-    let (editor_id, workspace_dir, workspace_copy) =
+    let (workspace_editor, workspace_dir, workspace_copy) =
         if let Some(ref ws) = workspace_override {
             let ws_path = cwd.join(ws);
             verbose!("workspace override: {}", ws_path.display());
             let resolved = workspace::load_workspace_config(&ws_path)
                 .with_context(|| format!("failed to load workspace config from '{ws}'"))?;
-            let editor_id = resolved.config.editor;
-            global_config.get_editor(&editor_id)?;
-            let inc = resolved.config.copy;
-            verbose!("workspace config editor={}, copy={:?}, config_dir={}", editor_id, inc, resolved.config_dir.display());
-            (editor_id, resolved.config_dir, inc)
+            if let Some(ref editor_id) = resolved.config.editor {
+                global_config.get_editor(editor_id)?;
+            }
+            let inc = resolved.config.copy.clone();
+            verbose!(
+                "workspace config editor={:?}, copy={:?}, config_dir={}",
+                resolved.config.editor,
+                inc,
+                resolved.config_dir.display()
+            );
+            (resolved.config.editor, resolved.config_dir, inc)
         } else {
             match workspace::find_workspace_config(&cwd, &git_root)
                 .context("failed to read workspace config")?
             {
                 Some(resolved) => {
-                    let editor_id = resolved.config.editor;
-                    global_config.get_editor(&editor_id)?;
-                    let inc = resolved.config.copy;
-                    verbose!("workspace config found: editor={}, copy={:?}, config_dir={}", editor_id, inc, resolved.config_dir.display());
-                    (editor_id, resolved.config_dir, inc)
+                    if let Some(ref editor_id) = resolved.config.editor {
+                        global_config.get_editor(editor_id)?;
+                    }
+                    let inc = resolved.config.copy.clone();
+                    verbose!(
+                        "workspace config found: editor={:?}, copy={:?}, config_dir={}",
+                        resolved.config.editor,
+                        inc,
+                        resolved.config_dir.display()
+                    );
+                    (resolved.config.editor, resolved.config_dir, inc)
                 }
                 None => {
                     bail!(
                         "no .grove.toml found between {} and git root {}\n\
-                         Create one with: echo 'editor = \"<ID>\"' > .grove.toml\n\
-                         Or use -w/--workspace to specify a directory containing one",
+                         Create one (optional `editor` = id from `grove config editors list`) or use -w/--workspace",
                         cwd.display(),
                         git_root.display(),
                     );
                 }
             }
         };
+
+    if let Some(ref eid) = editor_override {
+        global_config.get_editor(eid)?;
+    }
+
+    if open_editor && workspace_editor.is_none() && editor_override.is_none() {
+        bail!(
+            "cannot use --open: no `editor` in .grove.toml — set `editor` to an id from `grove config editors list`, or pass --editor <id>",
+        );
+    }
 
     let from_branch =
         from.map_or_else(|| git::current_branch().context("failed to get current branch"), Ok)?;
@@ -96,14 +119,15 @@ pub fn run(
     let relative_workspace = workspace_dir
         .strip_prefix(&git_root)
         .unwrap_or_else(|_| workspace_dir.as_ref());
-    verbose!("editor_id: {}", editor_id);
+    verbose!("workspace_editor: {:?}", workspace_editor);
     verbose!("workspace_dir: {}", workspace_dir.display());
     verbose!("relative_workspace: {}", relative_workspace.display());
 
     let editor_workspace = worktree_path.join(relative_workspace);
     verbose!("editor_workspace (dest): {}", editor_workspace.display());
 
-    let mut copy_paths = global_config.resolved_copy(&editor_id);
+    let copy_key = workspace_editor.as_deref().unwrap_or("");
+    let mut copy_paths = global_config.resolved_copy(copy_key);
     verbose!("resolved copy (global+editor): {:?}", copy_paths);
     for path in workspace_copy {
         if !copy_paths.contains(&path) {
@@ -114,11 +138,16 @@ pub fn run(
 
     let copied = copy::copy_paths(&workspace_dir, &editor_workspace, &copy_paths);
 
-    let editor_cfg = global_config.get_editor(&editor_id)?;
-    verbose!("opening editor '{}' with command: {}", editor_id, editor_cfg.command);
-    editor::open(editor_cfg, &editor_workspace).context("failed to open editor")?;
+    if open_editor {
+        let Some(editor_id) = editor_override.as_deref().or(workspace_editor.as_deref()) else {
+            bail!("internal error: --open without resolvable editor");
+        };
+        let editor_cfg = global_config.get_editor(editor_id)?;
+        verbose!("opening editor '{}' with command: {}", editor_id, editor_cfg.command);
+        editor::open(editor_cfg, &editor_workspace).context("failed to open editor")?;
+    }
 
-    save_state(&git_root, &actual_id, &editor_id, relative_workspace)?;
+    save_state(&git_root, &actual_id, relative_workspace)?;
 
     println!(
         "{} Worktree {} created on branch {} at {}",
@@ -130,11 +159,13 @@ pub fn run(
     for path in &copied {
         println!("  {} {}", DIM.paint("copied"), path);
     }
-    println!(
-        "{} Editor opened at {}",
-        GREEN.paint("✔"),
-        editor_workspace.display(),
-    );
+    if open_editor {
+        println!(
+            "{} Editor opened at {}",
+            GREEN.paint("✔"),
+            editor_workspace.display(),
+        );
+    }
 
     Ok(())
 }
@@ -174,8 +205,7 @@ fn resolve_conflicts(
 
         // ── Only the worktree exists ────────────────────────────────
         (true, false) => {
-            let (actual_id, actual_path) =
-                resolve_worktree_only(git_root, id)?;
+            let (actual_id, actual_path) = resolve_worktree_only(git_root, id)?;
             Ok((
                 actual_id,
                 actual_path,
@@ -238,7 +268,7 @@ fn resolve_branch_only(
 fn resolve_worktree_only(git_root: &Path, id: &str) -> Result<(String, PathBuf)> {
     match prompt::ask_worktree_conflict(id)? {
         prompt::WorktreeConflictChoice::OpenExisting => {
-            commands::open::run(Some(id.to_string()), None)?;
+            commands::open::run(Some(id.to_string()), None, None)?;
             std::process::exit(0);
         }
         prompt::WorktreeConflictChoice::NewName(new_id) => {
@@ -265,7 +295,7 @@ fn resolve_both(
 ) -> Result<(String, PathBuf, BranchAction)> {
     match prompt::ask_both_conflict(id, desired_branch)? {
         prompt::BothConflictChoice::OpenExisting => {
-            commands::open::run(Some(id.to_string()), None)?;
+            commands::open::run(Some(id.to_string()), None, None)?;
             std::process::exit(0);
         }
         prompt::BothConflictChoice::NewName(new_id) => {
@@ -297,12 +327,11 @@ fn resolve_both(
     }
 }
 
-fn save_state(git_root: &Path, id: &str, editor_id: &str, workspace: &Path) -> Result<()> {
+fn save_state(git_root: &Path, id: &str, workspace: &Path) -> Result<()> {
     let mut state = RepoState::load(git_root).context("failed to load state")?;
     state.add(
         id.to_string(),
         WorktreeState {
-            editor: editor_id.to_string(),
             workspace: workspace.to_path_buf(),
         },
     );

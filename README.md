@@ -2,7 +2,7 @@
 
 Manage parallel workspaces with git worktrees.
 
-`grove` uses [git worktrees](https://git-scm.com/docs/git-worktree) to give each workspace its own isolated copy of the repository, then opens your configured editor in the right directory — all in a single command.
+`grove` uses [git worktrees](https://git-scm.com/docs/git-worktree) to give each workspace its own isolated copy of the repository. You can optionally open your editor in the right subdirectory in the same flow (`grove plant … --open`).
 
 ## Requirements
 
@@ -21,19 +21,19 @@ Coming soon.
 # 1. Register an editor
 grove config editors add code --name "VSCode" --command "code \$workspace"
 
-# 2. Add a workspace config so grove knows which editor to use
-#    and which subdirectory to open. Place this anywhere between your
-#    current directory and the git root.
+# 2. Add a workspace config (.grove.toml) anywhere between your cwd and the
+#    git root. `editor` is optional unless you use `grove plant --open` without
+#    `--editor` (see docs/commands.md).
 echo 'editor = "code"' > .grove.toml
 
-# 3. Spin up a worktree and open the editor
-grove plant my-feature --from main
+# 3. Spin up a worktree (add --open to launch the editor after create)
+grove plant my-feature --from main --open
 
 # 4. When you're done, remove the worktree
 grove cut my-feature
 ```
 
-This creates a worktree at `<git-root>/../.grove__<repo>/my-feature` on a new branch `wip/my-feature`, then opens VSCode pointing at the correct subdirectory. You can also use `grove new` or `grove create` as aliases for `grove plant`, and `grove rm` or `grove remove` for `grove cut`.
+This creates a worktree at `<git-root>/../.grove__<repo>/my-feature` on a new branch `wip/my-feature`. With `--open`, it launches the editor from your global config (from `.grove.toml`’s `editor`, or from `--editor <id>` together with `--open`). You can also use `grove new` or `grove create` as aliases for `grove plant`, and `grove rm` or `grove remove` for `grove cut`.
 
 ## Configuration
 
@@ -57,15 +57,21 @@ The `$workspace` placeholder is replaced with the resolved workspace path at lau
 
 ### Workspace config — `.grove.toml`
 
-Place a `.grove.toml` file in any directory within a git repository to control which editor is used and which subdirectory is opened in the worktree.
+Place a `.grove.toml` file in any directory within a git repository to control the **workspace directory** (the directory containing the file defines the subdirectory used inside each new worktree). Optional fields:
+
+- **`editor`** — id of an editor defined in the global config. Used for `resolved_copy` paths and for `grove plant --open` / `grove tend` when you do not pass `--editor`. Omit it if you only need `copy` rules or never open an editor from that config.
+- **`copy`** — extra relative paths to copy into the worktree (see command reference).
 
 ```toml
 editor = "code"
+# copy = ["scripts/dev.sh"]
 ```
 
 When multiple `.grove.toml` files exist between your current directory and the git root, the most specific one (closest to your current directory) takes priority.
 
 A `.grove.toml` is required when creating a new worktree. If none is found between your current directory and the git root, `grove plant` will return an error.
+
+Grove’s per-repo state file (under `.grove__<repo>/`) records **only** the workspace subdirectory for each worktree id so `grove tend` can open the same folder again. It does **not** store which editor to use; that always comes from `.grove.toml` or from `--editor` when you pass it.
 
 ## Command reference
 
@@ -73,7 +79,7 @@ See [docs/commands.md](docs/commands.md) for the full command reference.
 
 ## Shell completions
 
-`grove` supports tab completions for all commands, flags, and arguments — including dynamic completion of worktree IDs for `grove tend` and `grove cut`.
+`grove` supports tab completions for all commands, flags, and arguments — including dynamic completion of worktree IDs for `grove tend` and `grove cut`, and **global editor ids** after `-e` / `--editor` on `grove plant` / `grove tend`.
 
 Add the appropriate line to your shell profile:
 

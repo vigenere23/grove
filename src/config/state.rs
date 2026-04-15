@@ -36,7 +36,6 @@ pub enum StateError {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorktreeState {
-    pub editor: String,
     pub workspace: PathBuf,
 }
 

@@ -1,5 +1,6 @@
 use clap::CommandFactory;
 
+use crate::config::global::GlobalConfig;
 use crate::git;
 use crate::Cli;
 
@@ -78,6 +79,11 @@ pub fn try_complete_subcommand() -> bool {
         return false;
     }
 
+    if prev == "--editor" || prev == "-e" {
+        complete_editors(current);
+        return true;
+    }
+
     match subcmd.as_str() {
         "cut" | "rm" | "remove" => {
             complete_rm(current);
@@ -129,6 +135,21 @@ fn complete_rm(current: &str) {
             }
         }
     }
+
+    print_completions(&lines);
+}
+
+fn complete_editors(current: &str) {
+    let Ok(config) = GlobalConfig::load() else {
+        return;
+    };
+
+    let lines: Vec<(String, String)> = config
+        .editors
+        .iter()
+        .filter(|(id, _)| id.starts_with(current))
+        .map(|(id, ed)| (id.clone(), ed.name.clone()))
+        .collect();
 
     print_completions(&lines);
 }
