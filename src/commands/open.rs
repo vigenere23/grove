@@ -88,8 +88,18 @@ pub fn run(
                         o.to_string()
                     }
                     None => {
-                        let (id, _) = resolve_editor(&global_config, &worktree_info.path, None)?;
-                        id
+                        let source_ws = git_root.join(&relative_workspace);
+                        let resolved = workspace::load_workspace_config(&source_ws)
+                            .context("failed to load workspace config from source repo")?;
+                        match resolved.config.editor {
+                            Some(ref id) => {
+                                global_config.get_editor(id)?;
+                                id.clone()
+                            }
+                            None => bail!(
+                                "no `editor` in .grove.toml — set `editor` to an id from `grove config editors list`, or pass --editor <id>",
+                            ),
+                        }
                     }
                 };
                 (editor_id, relative_workspace)
