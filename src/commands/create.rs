@@ -204,6 +204,8 @@ pub fn run(
         worktree_path.display(),
     );
 
+    save_state(&git_root, &actual_id, relative_workspace)?;
+
     copy::copy_paths(&workspace_dir, &editor_workspace, &copy_paths);
     copy::link_paths(&workspace_dir, &editor_workspace, &link_paths);
 
@@ -220,8 +222,6 @@ pub fn run(
         post_create::run(&editor_workspace, &workspace_post_create)
             .context("post-create command")?;
     }
-
-    save_state(&git_root, &actual_id, relative_workspace)?;
 
     if open_editor {
         println!(
