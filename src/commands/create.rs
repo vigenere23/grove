@@ -206,8 +206,8 @@ pub fn run(
 
     save_state(&git_root, &actual_id, relative_workspace)?;
 
-    copy::copy_paths(&workspace_dir, &editor_workspace, &copy_paths);
     copy::link_paths(&workspace_dir, &editor_workspace, &link_paths);
+    copy::copy_paths(&workspace_dir, &editor_workspace, &copy_paths);
 
     if open_editor {
         let Some(editor_id) = editor_override.as_deref().or(workspace_editor.as_deref()) else {
@@ -216,19 +216,17 @@ pub fn run(
         let editor_cfg = global_config.get_editor(editor_id)?;
         verbose!("opening editor '{}' with command: {}", editor_id, editor_cfg.command);
         editor::open(editor_cfg, &editor_workspace).context("failed to open editor")?;
-    }
 
-    if !workspace_post_create.is_empty() {
-        post_create::run(&editor_workspace, &workspace_post_create)
-            .context("post-create command")?;
-    }
-
-    if open_editor {
         println!(
             "{} Editor opened at {}",
             GREEN.paint("✔"),
             editor_workspace.display(),
         );
+    }
+
+    if !workspace_post_create.is_empty() {
+        post_create::run(&editor_workspace, &workspace_post_create)
+            .context("post-create command")?;
     }
 
     Ok(())
