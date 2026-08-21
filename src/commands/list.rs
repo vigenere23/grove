@@ -3,6 +3,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::config::state::RepoState;
+use crate::config::workspace;
 use crate::git;
 use crate::git::WorktreeInfo;
 use crate::output::*;
@@ -105,7 +106,7 @@ fn print_worktree(
     let state_lookup = state
         .worktrees
         .iter()
-        .find(|(id, _)| git::worktree_dir(git_root, id) == wt.path);
+        .find(|(id, _)| git::worktree_matches_id(git_root, &wt.path, id));
 
     let id_display = match state_lookup {
         Some((id, _)) => id.clone(),
@@ -136,7 +137,14 @@ fn print_worktree(
         println!("    {} {}", DIM.paint("branch:"), CYAN.paint(branch_display));
 
         if let Some((_, ws)) = state_lookup {
-            println!("    workspace: {}", ws.workspace.display());
+            if !ws.workspaces().is_empty() {
+                let rendered: Vec<String> = ws
+                    .workspaces()
+                    .iter()
+                    .map(|w| workspace::display_workspace(w))
+                    .collect();
+                println!("    {} {}", DIM.paint("workspaces:"), rendered.join(", "));
+            }
         }
     } else {
         println!(

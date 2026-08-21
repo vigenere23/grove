@@ -154,17 +154,26 @@ fn complete_editors(current: &str) {
     print_completions(&lines);
 }
 
+/// Completion order: worktrees (newest first).
+/// When typing a `-` prefix, show all flags.
 fn complete_open(current: &str) {
-    let lines: Vec<(String, String)> = worktree_entries()
-        .iter()
-        .filter(|e| e.id.starts_with(current))
-        .map(|e| {
-            (
-                e.id.clone(),
-                e.branch.clone().unwrap_or_default(),
-            )
-        })
-        .collect();
+    let lines: Vec<(String, String)> = if current.starts_with('-') {
+        get_flags("tend")
+            .into_iter()
+            .filter(|(flag, _)| flag.starts_with(current))
+            .collect()
+    } else {
+        worktree_entries()
+            .iter()
+            .filter(|e| e.id.starts_with(current))
+            .map(|e| {
+                (
+                    e.id.clone(),
+                    e.branch.clone().unwrap_or_default(),
+                )
+            })
+            .collect()
+    };
 
     print_completions(&lines);
 }

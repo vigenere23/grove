@@ -7,6 +7,7 @@ mod copy;
 mod output;
 mod post_create;
 mod prompt;
+mod setup;
 
 use clap::{builder::ValueHint, CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::env::CompleteEnv;
@@ -78,6 +79,12 @@ enum Commands {
         /// Override the workspace directory (must contain a .grove.toml)
         #[arg(short, long, value_hint = ValueHint::DirPath)]
         workspace: Option<String>,
+        /// Re-run copy/link and post_create for this workspace even if already set up
+        #[arg(long, conflicts_with = "no_setup")]
+        setup: bool,
+        /// Open without running copy/link or post_create for a new workspace
+        #[arg(long)]
+        no_setup: bool,
     },
     /// List all worktrees and their status
     #[command(visible_alias = "ls", visible_alias = "list")]
@@ -191,7 +198,14 @@ fn main() -> anyhow::Result<()> {
             id,
             workspace,
             editor,
-        } => commands::open::run(id, workspace, editor),
+            setup,
+            no_setup,
+        } => commands::open::run(
+            id,
+            workspace.map(std::path::PathBuf::from),
+            editor,
+            setup::SetupMode::from_flags(setup, no_setup),
+        ),
         Commands::Trees { details } => commands::list::run(details),
     }
 }

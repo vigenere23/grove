@@ -34,9 +34,57 @@ pub enum StateError {
     NotFound(String),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct WorktreeState {
-    pub workspace: PathBuf,
+    /// Legacy grove <=0.1 single-workspace field. Read for migration, never written.
+    /// `skip_serializing_if` is load-bearing: the `toml` crate errors on `Option::None`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    workspace: Option<PathBuf>,
+
+    /// Workspaces provisioned in this worktree, kept sorted. Membership means grove has
+    /// already run copy/link/post_create for this (worktree, workspace) pair.
+    #[serde(default)]
+    workspaces: Vec<PathBuf>,
+}
+
+impl WorktreeState {
+    pub fn new(ws: &Path) -> Self {
+        Self {
+            workspace: None,
+            workspaces: vec![ws.to_path_buf()],
+        }
+    }
+
+    pub fn workspaces(&self) -> &[PathBuf] {
+        &self.workspaces
+    }
+
+    pub fn contains(&self, ws: &Path) -> bool {
+        self.workspaces.iter().any(|w| w == ws)
+    }
+
+    /// Sorted insert. Returns true only when `ws` was not already recorded.
+    pub fn insert(&mut self, ws: &Path) -> bool {
+        match self.workspaces.binary_search_by(|w| w.as_path().cmp(ws)) {
+            Ok(_) => false,
+            Err(pos) => {
+                self.workspaces.insert(pos, ws.to_path_buf());
+                true
+            }
+        }
+    }
+
+    /// Fold the legacy `workspace` field into `workspaces`. Idempotent.
+    pub fn migrate(&mut self) {
+        // Normalize first: `insert` assumes a sorted list, and neither a legacy nor a
+        // hand-edited state file offers that guarantee.
+        self.workspaces.sort();
+        self.workspaces.dedup();
+
+        if let Some(legacy) = self.workspace.take() {
+            self.insert(&legacy);
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -64,7 +112,14 @@ impl RepoState {
             source: e,
         })?;
 
-        toml::from_str(&contents).map_err(|e| StateError::Parse { path, source: e })
+        let mut state: Self =
+            toml::from_str(&contents).map_err(|e| StateError::Parse { path, source: e })?;
+
+        for entry in state.worktrees.values_mut() {
+            entry.migrate();
+        }
+
+        Ok(state)
     }
 
     pub fn save(&self, git_root: &Path) -> Result<(), StateError> {
@@ -93,6 +148,12 @@ impl RepoState {
             .ok_or_else(|| StateError::NotFound(id.to_string()))
     }
 
+    /// Record `ws` as provisioned for `id`, creating the entry if it does not exist.
+    /// Returns true only when the workspace was newly added.
+    pub fn insert_workspace(&mut self, id: &str, ws: &Path) -> bool {
+        self.worktrees.entry(id.to_string()).or_default().insert(ws)
+    }
+
     pub fn remove(&mut self, id: &str) {
         self.worktrees.remove(id);
     }
@@ -105,8 +166,9 @@ impl RepoState {
             .worktrees
             .keys()
             .filter(|id| {
-                let expected = git::worktree_dir(git_root, id);
-                !worktree_paths.contains(&expected)
+                !worktree_paths
+                    .iter()
+                    .any(|p| git::worktree_matches_id(git_root, p, id))
             })
             .cloned()
             .collect();

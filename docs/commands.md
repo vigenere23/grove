@@ -94,11 +94,11 @@ Create a git worktree using the nearest `.grove.toml` between the current direct
 2. **Loads workspace config** — walks from cwd up to the git root for `.grove.toml`, or loads from `-w`/`--workspace`. Fails if no file is found.
 3. **Validates `editor` in TOML** when it is set (must match an id in `grove config editors list`). The `editor` key is optional in `.grove.toml`; if it is omitted, global + workspace `copy` / `link` rules still apply, but you need **`--editor <id>`** together with **`--open`** to launch an editor.
 4. **Merges `copy` and `link` lists** from global config, the resolved editor (when `editor` is set in TOML or implied by `--editor` for `--open`), and `.grove.toml`, using the same dedupe rules as for `copy` alone. If **any relative path** appears in **both** merged lists, the command fails with an invalid-config error (before creating the worktree).
-5. **Creates the worktree** at `<git-root>/../.grove__<repo-name>/<ID>` (after any conflict prompts). If a prompt offers **open existing** and you choose it, `grove` runs the same open path as `grove tend`, forwarding **`--workspace` / `-w`** and **`--editor` / `-e`** from this `grove plant` invocation (when you passed them) so the override and saved workspace rules apply.
-6. **If `--open`:** resolves the editor id as `editor` from TOML, or `--editor` if given, then runs that editor’s command with `$workspace` set to `<worktree-path>/<workspace-path>`. The editor is launched **before** copies, links, and post-create commands so it can start loading while those run.
-7. **Copies** merged `copy` paths, then **creates symlinks** for merged `link` paths, under `<worktree-path>/<workspace-path>`, where `<workspace-path>` is the path from the git root to the directory that contains the selected `.grove.toml`. For each path, a **`copying <path>`** line is printed when that copy starts, then **`copied <path>`** on success. If a **copy** destination already exists, a **warning** is printed to stderr (`destination exists; removing before copy: …`), then it is **removed** (file, symlink, or directory tree) so the copy **replaces** it—same rule as for links below. Each symlink’s target is the **canonical** path of the corresponding file or directory in the main checkout’s workspace (the directory that contains `.grove.toml`). If a **link** destination already exists, a similar **warning** is printed (`… before link: …`), then it is **removed** so the symlink can replace it; **`linking <path>`** is printed when that link step starts, then **`linked <path>`** on success. On **Windows**, creating symlinks may require Developer Mode or an elevated shell, depending on your policy.
-8. **`post_create` (`.grove.toml` only):** if the workspace config has a `post_create` array of strings, each entry is run as a **shell command** from `<worktree-path>/<workspace-path>`, **sequentially**, with stdin/stdout/stderr inherited from `grove`. Before each command, a line **`run <command>`** is printed. The **first** command that exits non-zero or fails to spawn aborts `grove plant` (fail fast).
-9. **Saves state** for this worktree: only the **workspace** path (the subdirectory under the worktree, relative to the git root — the directory that contained the chosen `.grove.toml`).
+5. **Creates the worktree** at `<git-root>/../.grove__<repo-name>/<ID>` (after any conflict prompts). If a prompt offers **open existing** and you choose it, `grove` runs the same open path as `grove tend` for the workspace resolved in step 2 — **always**, whether that came from **`--workspace` / `-w`** or from the walk up from cwd — and forwards **`--editor` / `-e`** when you passed it. So `cd apps/api && grove plant feat-x` on an existing worktree opens `apps/api` inside it, and **sets it up** if that pair has never been set up (see `grove tend`). `grove plant` then exits.
+6. **Saves state** for this worktree: the **workspace** path (the subdirectory under the worktree, relative to the git root — the directory that contained the chosen `.grove.toml`) is recorded as set up. State is written **before** the copy/link and `post_create` steps, so a failure part-way through does not lose the record. Any state left over from a previous worktree with the same id is **replaced**, not merged into.
+7. **Creates symlinks** for merged `link` paths, then **copies** merged `copy` paths, under `<worktree-path>/<workspace-path>`, where `<workspace-path>` is the path from the git root to the directory that contains the selected `.grove.toml`. For each path, a **`copying <path>`** line is printed when that copy starts, then **`copied <path>`** on success. If a **copy** destination already exists, a **warning** is printed to stderr (`destination exists; removing before copy: …`), then it is **removed** (file, symlink, or directory tree) so the copy **replaces** it—same rule as for links below. Each symlink’s target is the **canonical** path of the corresponding file or directory in the main checkout’s workspace (the directory that contains `.grove.toml`). If a **link** destination already exists, a similar **warning** is printed (`… before link: …`), then it is **removed** so the symlink can replace it; **`linking <path>`** is printed when that link step starts, then **`linked <path>`** on success. On **Windows**, creating symlinks may require Developer Mode or an elevated shell, depending on your policy.
+8. **If `--open`:** resolves the editor id as `--editor` if you passed it, otherwise `editor` from TOML, then runs that editor’s command with `$workspace` set to `<worktree-path>/<workspace-path>`. The editor is launched **after** the symlinks and copies, and **before** `post_create`, so it can start loading while those commands run.
+9. **`post_create` (`.grove.toml` only):** if the workspace config has a `post_create` array of strings, each entry is run as a **shell command** from `<worktree-path>/<workspace-path>`, **sequentially**, with stdin/stdout/stderr inherited from `grove`. Before each command, a line **`run <command>`** is printed. The **first** command that exits non-zero or fails to spawn aborts `grove plant` (fail fast).
 
 ### Example
 
@@ -153,25 +153,31 @@ grove plant featureX --open --editor cursor
 **Alias:** `grove open`
 
 ```
-grove tend [ID] [-e|--editor <ID>] [-w|--workspace <DIR>]
+grove tend [ID] [-e|--editor <ID>] [-w|--workspace <DIR>] [--setup | --no-setup]
 ```
 
-Reopen an existing worktree in an editor.
+Reopen an existing worktree in an editor, at any of the repository’s workspaces. The **first** time a given (worktree, workspace) pair is opened, that workspace’s merged `copy` / `link` paths and its `post_create` commands are run in the worktree, exactly as `grove plant` would have done.
 
 | Argument       | Description |
 | -------------- | ----------- |
 | `[ID]`         | Worktree identifier. If omitted, an interactive list of worktrees is shown. |
 | `-e`, `--editor` | Use this **global** editor id for this launch instead of the `editor` field in `.grove.toml`. |
-| `-w`, `--workspace` | Load `.grove.toml` from this directory (relative to cwd). Updates the **saved workspace path** for this worktree in state (editor is still read from that TOML or from `--editor`). |
+| `-w`, `--workspace` | Open this workspace directory (resolved relative to cwd) instead of picking one interactively. It need not be a workspace this worktree has been set up at before — a new one is set up on this open, just as if it had been picked from the list. |
+| `--setup`      | Re-run this workspace’s `copy` / `link` and `post_create` even if it is already set up. Cannot be combined with `--no-setup`. |
+| `--no-setup`   | Open without running `copy` / `link` or `post_create` for a workspace that is not set up yet. The workspace is **not** recorded as set up, so a later open without this flag still sets it up. |
 
 ### What it does
 
 1. If `ID` is omitted, displays an interactive list of worktrees (excluding the one you are already in, if applicable).
-2. Resolves **workspace path** and **editor id**:
-   - With **`-w` / `--workspace`:** loads that `.grove.toml`; the workspace subdirectory is derived from the config file’s location. The editor id comes from the TOML’s `editor` field or from **`--editor`**. Persists **only** the workspace path in state for this worktree id.
-   - Otherwise, if grove has **saved state** for this id, uses the **stored workspace path** only; the editor id always comes from `.grove.toml` inside the worktree (walk from cwd or the worktree root) or from **`--editor`**.
-   - If there is **no** state entry, walks the same way inside the worktree for `.grove.toml`, then may save **only** the workspace path to state after a successful open.
-3. Launches the resolved editor at `<worktree-path>/<workspace-path>`.
+2. **Picks the workspace.** With **`-w` / `--workspace`**, that directory is used directly and no prompt is shown. Otherwise `grove` scans the **main checkout** for directories containing a `.grove.toml`, adds any workspace already recorded for this worktree (so one whose config has since been deleted stays reachable), and sorts them **already set up first, then alphabetically**. With two or more candidates an interactive picker (`Open workspace:`) is shown, labelling each one `apps/api  (set up)` or `packages/ui  (new — will run setup)`; the git root itself is shown as `.`. A single candidate is used without prompting, and none is an error. Bare `grove tend` therefore prompts twice: worktree, then workspace.
+   The scan prunes `.git`, grove’s own `.grove__*` directories, and `node_modules`, `target`, `dist`, `build`, `.next`, `vendor`, `.venv`; one of those pruned names is still **listed** when it holds a `.grove.toml` of its own, it is simply not descended into. Symlinked directories are not followed. Because the scan covers the main checkout only, a workspace that exists only on the worktree’s own branch is not offered — use `-w` for that.
+3. **Decides whether to set up.** By default, only when this (worktree, workspace) pair has never been set up. **`--setup`** always sets up; **`--no-setup`** never does.
+4. **Resolves the editor id:** **`--editor`** if given, otherwise the `editor` field of that workspace’s `.grove.toml` **in the main checkout** (not the copy inside the worktree). That config is read only when it is needed, so `grove tend <ID> -e <editor>` keeps working for an already-set-up workspace whose `.grove.toml` has since been deleted.
+5. **Sets up the workspace**, when step 3 says so: it is first recorded as set up and state is saved — copy/link and `post_create` can fail half-way, and losing the record would re-run them on the next open — then `→ Setting up workspace <workspace> …` is printed and the merged `link` symlinks are created, followed by the merged `copy` paths, under `<worktree-path>/<workspace-path>`. Same merge rules, same warnings, and same `linking` / `copied` output as `grove plant` (steps 4 and 7 above).
+6. **Launches the resolved editor** at `<worktree-path>/<workspace-path>`.
+7. **Runs `post_create`** from that directory — after the editor, and only when step 5 ran. Same fail-fast rule as `grove plant`.
+
+If the selected workspace has no `.grove.toml` in the main checkout — reachable for a workspace that was set up before its config was deleted — `grove` prints `! No .grove.toml at <path> — opening without setup.` to stderr, skips the setup, and opens the editor anyway. The workspace stays recorded, so the warning is not printed again on later opens. With **`--setup`** the same situation is a hard error instead.
 
 There is no fallback to an arbitrary “first” global editor; you need a valid `editor` in `.grove.toml` or pass **`--editor`**.
 
@@ -180,9 +186,17 @@ There is no fallback to an arbitrary “first” global editor; you need a valid
 | Condition                          | Message (typical) |
 | ---------------------------------- | ----------------- |
 | Unknown worktree id                | `no worktree found with id '<ID>'` |
-| No `.grove.toml` with enough info  | `no .grove.toml found between …` or `no editor in .grove.toml … or pass --editor <id>` |
+| No `.grove.toml` anywhere under the git root | Message begins with `no .grove.toml found under` and mentions `-w/--workspace` |
+| The git root itself cannot be read while scanning | Context mentions `failed to scan <path> for .grove.toml files` |
+| The `.grove.toml` for the selected workspace has no `editor` and no `--editor` was passed | `no editor in .grove.toml … or pass --editor <id>` |
+| `--setup` for a workspace with no `.grove.toml` | `cannot set up workspace '<WORKSPACE>': no .grove.toml at <path>` |
+| `--setup` and `--no-setup` together | Clap error: `the argument '--setup' cannot be used with '--no-setup'` |
+| `-w` points at a missing directory, or at an unparseable `.grove.toml` | Context mentions `failed to load workspace config from '<DIR>'` |
+| The workspace is outside the repository and its worktrees | `workspace directory <path> is not inside the git repository or any of its worktrees` |
+| Same path in merged `copy` and `link` (while setting up) | Message begins with `invalid config:` and lists overlapping paths |
 | Editor not found in global config  | `editor '<ID>' not found` |
 | Editor fails to launch             | `failed to launch editor '<command>': <OS error>` |
+| `post_create` command exits non-zero | Message begins with `post-create command failed` and includes the shell command |
 
 ---
 
@@ -190,19 +204,32 @@ There is no fallback to an arbitrary “first” global editor; you need a valid
 
 **Aliases:** `grove ls`, `grove list`
 
-List all worktrees and their status.
+```
+grove trees [--details]
+```
+
+List all worktrees and their status. The main checkout is not listed.
 
 ### Output
 
-For each worktree, displays:
+One line per worktree:
 
-- **Identifier** (or `?` if not tracked in state)
-- **Dirty/clean status** (`[dirty]` or `[clean]`)
-- **Path** on disk
-- **Branch** name (or `(detached)` / `(bare)`)
-- **Workspace** subdirectory (if tracked)
+```
+  feat-a ✔ clean  wip/feat-a
+▸ feat-b [uncommitted, ↑2]  wip/feat-b
+```
 
-The current worktree (if you are inside one) is marked with `▸` and listed first.
+- **Identifier** — from the state file; for a worktree grove does not track, the directory name is shown instead (or `?`), followed by `(untracked)`. A worktree created directly with `git worktree add` is matched by its directory name, so it is *not* marked untracked once grove has opened it.
+- **Status** — `✔ clean`, or a bracketed list of `uncommitted`, `not pushed`, `↑<ahead>`, `↓<behind>` (empty for a bare worktree).
+- **Branch** name (or `(detached)` / `(bare)`).
+
+With **`--details`**, each worktree is printed over several lines instead, separated by a blank line, adding:
+
+- **`path:`** — the worktree directory on disk.
+- **`branch:`** — the same branch name.
+- **`workspaces:`** — the workspace subdirectories grove has set up in that worktree, comma-separated, with the git root itself shown as `.` (for example `workspaces: ., apps/api`). Omitted when there are none.
+
+Worktrees are listed newest first; the current worktree (if you are inside one) is marked with `▸` and listed first.
 
 ---
 
@@ -280,7 +307,7 @@ grove cut --all --force --branch delete
 
 When the binary is sourced with `COMPLETE=zsh`, `COMPLETE=bash`, or `COMPLETE=fish` (see the project `README.md`), dynamic completions include:
 
-- Worktree ids for **`grove tend`** / **`grove open`** and **`grove cut`** (and related flags where implemented).
+- Worktree ids for **`grove tend`** / **`grove open`** and **`grove cut`** (and that subcommand’s own flags — including `--setup` / `--no-setup` on `grove tend` — once you type a leading `-`).
 - **Global editor ids** (with optional descriptions) after **`-e` / `--editor`** on **`grove plant`** / **`grove new`** / **`grove create`** and **`grove tend`** / **`grove open`**.
 
 Other flags and subcommands are completed via `clap_complete` dynamic integration.

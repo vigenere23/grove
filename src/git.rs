@@ -17,6 +17,9 @@ pub enum GitError {
     #[error("git command failed: {0}")]
     CommandFailed(String),
 
+    #[error("workspace directory {0} is not inside the git repository or any of its worktrees")]
+    WorkspaceOutsideRepo(PathBuf),
+
     #[error("failed to execute git: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -84,6 +87,52 @@ pub fn worktrees_base_dir(git_root: &Path) -> PathBuf {
 
 pub fn worktree_dir(git_root: &Path, id: &str) -> PathBuf {
     worktrees_base_dir(git_root).join(id)
+}
+
+/// Whether the checkout at `worktree_path` is the one a state entry keyed `id` refers to.
+/// A worktree grove created lives at [`worktree_dir`]; one created directly with
+/// `git worktree add ../foo` matches on its last path component instead. The main
+/// checkout never matches by name — it is not a grove worktree.
+///
+/// This is the single definition of that rule: `RepoState::prune`, `commands::open` and
+/// `commands::list` must agree, or state entries get pruned by one and looked up by
+/// another.
+pub fn worktree_matches_id(git_root: &Path, worktree_path: &Path, id: &str) -> bool {
+    worktree_path == worktree_dir(git_root, id)
+        || (worktree_path != git_root && worktree_id(worktree_path).as_deref() == Some(id))
+}
+
+/// Express `dir` relative to the checkout that contains it — the main checkout at
+/// `git_root`, or any of `worktree_paths`. Both sides are canonicalized before
+/// comparing, since `repo_root` is not canonical while workspace configs are, and the
+/// longest matching prefix wins so nested checkouts resolve correctly. Hard-errors
+/// rather than silently handing back an absolute path.
+pub fn relative_workspace(
+    git_root: &Path,
+    worktree_paths: &[PathBuf],
+    dir: &Path,
+) -> Result<PathBuf, GitError> {
+    // A path that does not exist yet degrades to itself rather than panicking.
+    fn canonical(p: &Path) -> PathBuf {
+        p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
+    }
+
+    let target = canonical(dir);
+    let mut best: Option<(usize, PathBuf)> = None;
+
+    for root in std::iter::once(git_root).chain(worktree_paths.iter().map(PathBuf::as_path)) {
+        let root = canonical(root);
+        if let Ok(rel) = target.strip_prefix(&root) {
+            let depth = root.components().count();
+            if best.as_ref().is_none_or(|(best_depth, _)| depth > *best_depth) {
+                best = Some((depth, rel.to_path_buf()));
+            }
+        }
+    }
+
+    // The checkout root itself relativizes to an empty path, which is valid.
+    best.map(|(_, rel)| rel)
+        .ok_or(GitError::WorkspaceOutsideRepo(target))
 }
 
 pub struct WorktreeInfo {
@@ -335,19 +384,9 @@ pub fn worktree_id(worktree_path: &Path) -> Option<String> {
 /// Find a worktree by id. Checks the grove worktree dir first, then scans
 /// all git worktrees for a directory whose name matches the id.
 pub fn find_worktree(git_root: &Path, id: &str) -> Result<Option<WorktreeInfo>, GitError> {
-    let grove_path = worktree_dir(git_root, id);
-    let worktrees = list_worktrees()?;
-
-    for wt in worktrees {
-        if wt.path == grove_path {
-            return Ok(Some(wt));
-        }
-        if wt.path != git_root && worktree_id(&wt.path).as_deref() == Some(id) {
-            return Ok(Some(wt));
-        }
-    }
-
-    Ok(None)
+    Ok(list_worktrees()?
+        .into_iter()
+        .find(|wt| worktree_matches_id(git_root, &wt.path, id)))
 }
 
 pub fn worktree_branch(worktree_path: &Path) -> Result<Option<String>, GitError> {
