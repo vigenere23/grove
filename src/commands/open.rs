@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
+use crate::commands;
 use crate::config::global::GlobalConfig;
 use crate::config::state::RepoState;
 use crate::config::workspace::{self, WorkspaceConfigError};
@@ -16,6 +17,7 @@ pub fn run(
     id: Option<String>,
     workspace_override: Option<PathBuf>,
     editor_override: Option<String>,
+    terminal: bool,
     mode: SetupMode,
 ) -> Result<()> {
     let git_root = git::repo_root().context("failed to find git repository root")?;
@@ -93,9 +95,10 @@ pub fn run(
 
     // ── Which editor? ───────────────────────────────────────────────────
     let editor_id = match editor_override {
+        _ if terminal => None,
         Some(ref o) => {
             global_config.get_editor(o)?;
-            o.clone()
+            Some(o.clone())
         }
         None => {
             let from_config = match plan {
@@ -109,7 +112,7 @@ pub fn run(
             match from_config {
                 Some(editor_id) => {
                     global_config.get_editor(&editor_id)?;
-                    editor_id
+                    Some(editor_id)
                 }
                 None => bail!(
                     "no `editor` in .grove.toml{} — set `editor` to an id from `grove config editors list`, or pass --editor <id>",
@@ -123,12 +126,15 @@ pub fn run(
     };
 
     verbose!(
-        "editor_id: {}, relative_workspace: {}",
+        "editor_id: {:?}, relative_workspace: {}",
         editor_id,
         relative.display()
     );
 
-    let editor_cfg = global_config.get_editor(&editor_id)?;
+    let editor_cfg = editor_id
+        .as_deref()
+        .map(|id| global_config.get_editor(id))
+        .transpose()?;
     let editor_workspace = worktree_info.path.join(&relative);
     verbose!("editor_workspace: {}", editor_workspace.display());
 
@@ -148,6 +154,13 @@ pub fn run(
         );
         setup::provision_files(plan, &worktree_info.path);
     }
+
+    let Some(editor_cfg) = editor_cfg else {
+        if let Some(ref plan) = plan {
+            setup::run_post_create(plan, &worktree_info.path)?;
+        }
+        return commands::create::open_shell(&editor_workspace);
+    };
 
     editor::open(editor_cfg, &editor_workspace).context("failed to open editor")?;
 

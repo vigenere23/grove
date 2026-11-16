@@ -67,6 +67,9 @@ enum Commands {
         /// Override the workspace directory (must contain a .grove.toml)
         #[arg(short, long, value_hint = ValueHint::DirPath)]
         workspace: Option<String>,
+        /// Open a shell in the workspace, in this terminal, instead of an editor
+        #[arg(short, long, conflicts_with = "open")]
+        terminal: bool,
     },
     /// Reopen an existing worktree in the editor
     #[command(visible_alias = "open")]
@@ -85,6 +88,9 @@ enum Commands {
         /// Open without running copy/link or post_create for a new workspace
         #[arg(long)]
         no_setup: bool,
+        /// Open a shell in the workspace, in this terminal, instead of an editor
+        #[arg(short, long, conflicts_with = "editor")]
+        terminal: bool,
     },
     /// List all worktrees and their status
     #[command(visible_alias = "ls", visible_alias = "list")]
@@ -193,17 +199,20 @@ fn main() -> anyhow::Result<()> {
             workspace,
             open,
             editor,
-        } => commands::create::run(id, from, branch, workspace, open, editor),
+            terminal,
+        } => commands::create::run(id, from, branch, workspace, open, editor, terminal),
         Commands::Tend {
             id,
             workspace,
             editor,
             setup,
             no_setup,
+            terminal,
         } => commands::open::run(
             id,
             workspace.map(std::path::PathBuf::from),
             editor,
+            terminal,
             setup::SetupMode::from_flags(setup, no_setup),
         ),
         Commands::Trees { details } => commands::list::run(details),

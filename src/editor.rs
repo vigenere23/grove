@@ -45,3 +45,29 @@ pub fn open(editor: &EditorConfig, workspace_path: &Path) -> Result<(), EditorEr
 
     Ok(())
 }
+
+/// Hand the current terminal over to the user's shell. Only returns on failure.
+#[cfg(unix)]
+pub fn exec_shell(workspace_path: &Path) -> EditorError {
+    use std::os::unix::process::CommandExt;
+
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+    let source = Command::new(&shell).current_dir(workspace_path).exec();
+    EditorError::Launch {
+        command: shell,
+        source,
+    }
+}
+
+/// No `exec` outside Unix: wait for the shell, then exit with its status.
+#[cfg(not(unix))]
+pub fn exec_shell(workspace_path: &Path) -> EditorError {
+    let shell = std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string());
+    match Command::new(&shell).current_dir(workspace_path).status() {
+        Ok(status) => std::process::exit(status.code().unwrap_or(1)),
+        Err(source) => EditorError::Launch {
+            command: shell,
+            source,
+        },
+    }
+}

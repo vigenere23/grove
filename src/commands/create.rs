@@ -12,6 +12,13 @@ use crate::output::*;
 use crate::prompt;
 use crate::setup;
 
+/// How to open the worktree when a conflict prompt picks "open existing".
+struct OpenExisting {
+    workspace: Option<PathBuf>,
+    editor: Option<String>,
+    terminal: bool,
+}
+
 enum BranchAction {
     Create { from: String, name: String },
     Reuse { name: String },
@@ -24,6 +31,7 @@ pub fn run(
     workspace_override: Option<String>,
     open_editor: bool,
     editor_override: Option<String>,
+    terminal: bool,
 ) -> Result<()> {
     // ── Phase 1: gather context & validate ──────────────────────────────
 
@@ -69,8 +77,11 @@ pub fn run(
         // Always forward the resolved workspace, so "open the existing worktree" sets that
         // workspace up. `-w` is already folded into `plan.source_dir`, so this one path
         // covers both.
-        Some(plan.source_dir.clone()),
-        editor_override.clone(),
+        OpenExisting {
+            workspace: Some(plan.source_dir.clone()),
+            editor: editor_override.clone(),
+            terminal,
+        },
     )?;
 
     // ── Phase 2: execute actions ────────────────────────────────────────
@@ -123,7 +134,21 @@ pub fn run(
 
     setup::run_post_create(&plan, &worktree_path)?;
 
+    if terminal {
+        open_shell(&editor_workspace)?;
+    }
+
     Ok(())
+}
+
+pub fn open_shell(workspace: &Path) -> Result<()> {
+    println!(
+        "{} Shell opened at {} {}",
+        GREEN.paint("✔"),
+        workspace.display(),
+        DIM.paint("(exit to return)"),
+    );
+    Err(editor::exec_shell(workspace)).context("failed to open shell")
 }
 
 /// Check both worktree and branch existence upfront, then present the
@@ -135,8 +160,7 @@ fn resolve_conflicts(
     from_branch: &str,
     desired_branch: &str,
     explicit_branch: bool,
-    workspace_override: Option<PathBuf>,
-    editor_override: Option<String>,
+    existing: OpenExisting,
 ) -> Result<(String, PathBuf, BranchAction)> {
     let worktree_path = git::worktree_dir(git_root, id);
     let wt_exists = worktree_path.exists();
@@ -166,8 +190,7 @@ fn resolve_conflicts(
             let (actual_id, actual_path) = resolve_worktree_only(
                 git_root,
                 id,
-                workspace_override.clone(),
-                editor_override.clone(),
+                existing,
             )?;
             Ok((
                 actual_id,
@@ -187,8 +210,7 @@ fn resolve_conflicts(
                 from_branch,
                 desired_branch,
                 explicit_branch,
-                workspace_override.clone(),
-                editor_override.clone(),
+                existing,
             )?;
             Ok((actual_id, actual_path, branch_action))
         }
@@ -238,15 +260,15 @@ fn resolve_branch_only(
 fn resolve_worktree_only(
     git_root: &Path,
     id: &str,
-    workspace_override: Option<PathBuf>,
-    editor_override: Option<String>,
+    existing: OpenExisting,
 ) -> Result<(String, PathBuf)> {
     match prompt::ask_worktree_conflict(id)? {
         prompt::WorktreeConflictChoice::OpenExisting => {
             commands::open::run(
                 Some(id.to_string()),
-                workspace_override,
-                editor_override,
+                existing.workspace,
+                existing.editor,
+                existing.terminal,
                 setup::SetupMode::Auto,
             )?;
             std::process::exit(0);
@@ -272,15 +294,15 @@ fn resolve_both(
     from_branch: &str,
     desired_branch: &str,
     explicit_branch: bool,
-    workspace_override: Option<PathBuf>,
-    editor_override: Option<String>,
+    existing: OpenExisting,
 ) -> Result<(String, PathBuf, BranchAction)> {
     match prompt::ask_both_conflict(id, desired_branch)? {
         prompt::BothConflictChoice::OpenExisting => {
             commands::open::run(
                 Some(id.to_string()),
-                workspace_override,
-                editor_override,
+                existing.workspace,
+                existing.editor,
+                existing.terminal,
                 setup::SetupMode::Auto,
             )?;
             std::process::exit(0);

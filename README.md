@@ -32,6 +32,7 @@ grove plant my-feature --from main --open
 # 4. Reopen it later. If the repo has several .grove.toml directories, grove asks
 #    which workspace to open, and sets that workspace up the first time you pick it.
 grove tend my-feature
+#    Use -t to get a shell in the worktree, in this terminal, instead of the editor.
 
 # 5. When you're done, remove the worktree
 grove cut my-feature
